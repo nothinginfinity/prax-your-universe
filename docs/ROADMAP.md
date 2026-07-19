@@ -405,7 +405,7 @@ The next active release is **v0.2.0 — Local Graph Core**.
 - Render edges efficiently.
 - Keep edge visuals synchronized with layout movement.
 
-### Work package PUX-004 — Node CRUD
+### Work package PUX-004 — Node CRUD — complete
 
 - Add link and note creation.
 - Add edit and delete.
