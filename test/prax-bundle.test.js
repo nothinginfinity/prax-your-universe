@@ -62,8 +62,14 @@ test('PUX-005 exports a versioned complete Prax JSON bundle', () => {
 });
 
 test('export serialization is deterministic apart from intentionally supplied timestamp metadata', () => {
-  const first = createExport();
-  const second = createExport();
+  const snapshot = createRichSnapshot();
+  const options = {
+    applicationVersion: '0.2.0-pux.5',
+    exportedAt: EXPORTED_AT,
+    metadata: { extension: { provider: 'test', revision: 2 } }
+  };
+  const first = createPraxExport(snapshot, options);
+  const second = createPraxExport(snapshot, options);
   assert.equal(first.json, second.json);
   for (const collection of ['universes', 'nodes', 'edges', 'layouts', 'layoutNodes', 'settings']) {
     const ids = first.bundle.graph[collection].map(({ id }) => id);
