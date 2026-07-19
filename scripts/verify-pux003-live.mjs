@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
@@ -10,6 +10,7 @@ const profileDir = await mkdtemp(join(tmpdir(), 'prax-pux003-'));
 await mkdir(artifactDir, { recursive: true });
 
 const failures = [];
+let checkpoint = 'launch';
 const context = await chromium.launchPersistentContext(profileDir, {
   headless: true,
   viewport: { width: 1440, height: 900 }
@@ -68,6 +69,7 @@ const gotoPrax = async () => {
 };
 
 try {
+  checkpoint = 'desktop startup';
   await gotoPrax();
   let state = await readState();
   assert.equal(state.currentView, 'sphere', 'desktop startup should restore sphere for a fresh profile');
@@ -78,18 +80,26 @@ try {
 
   const title = 'PUX-003 Live Verification';
   const url = 'https://example.com/pux-003-live-verification';
+  checkpoint = 'open add-link modal';
   await page.click('#add-btn');
+  await page.screenshot({ path: `${artifactDir}/desktop-add-modal.png`, fullPage: true });
+  checkpoint = 'fill add-link form';
   await page.fill('#link-title-input', title);
   await page.fill('#link-url-input', url);
+  checkpoint = 'submit add-link form';
   await page.click('#submit-link-btn');
+  checkpoint = 'wait for node-plus-edge mutation';
   await page.waitForFunction((expectedTitle) => (
     globalThis.__PRAX_TEST__?.getState().nodes.some((node) => node.title === expectedTitle)
   ), title, { timeout: 15000 });
   state = await readState();
+  await page.screenshot({ path: `${artifactDir}/desktop-after-add.png`, fullPage: true });
+  checkpoint = 'validate node-plus-edge mutation';
   const created = state.nodes.find((node) => node.title === title);
   assert.ok(created, 'new link must exist after the UI mutation');
   validateTopology(state, 'desktop sphere after add');
 
+  checkpoint = 'toggle grid';
   await page.click('#view-toggle-btn');
   await page.waitForFunction(() => globalThis.__PRAX_TEST__?.getState().currentView === 'grid');
   state = await readState();
@@ -117,6 +127,7 @@ try {
   assert.ok(state.nodes.some((node) => node.id === created.id), 'persisted node must remain present on mobile');
   validateTopology(state, 'mobile sphere');
 
+  checkpoint = 'toggle grid';
   await page.click('#view-toggle-btn');
   await page.waitForFunction(() => globalThis.__PRAX_TEST__?.getState().currentView === 'grid');
   state = await readState();
@@ -137,6 +148,16 @@ try {
     reloadVerified: true,
     errors: failures
   }, null, 2));
+} catch (error) {
+  const state = await page.evaluate(() => globalThis.__PRAX_TEST__?.getState?.() ?? null).catch(() => null);
+  await page.screenshot({ path: `${artifactDir}/failure.png`, fullPage: true }).catch(() => {});
+  await writeFile(`${artifactDir}/failure.txt`, [
+    `checkpoint: ${checkpoint}`,
+    error.stack ?? String(error),
+    `browser failures: ${JSON.stringify(failures, null, 2)}`,
+    `state: ${JSON.stringify(state, null, 2)}`
+  ].join('\n\n'));
+  throw error;
 } finally {
   await context.close();
   await rm(profileDir, { recursive: true, force: true });
