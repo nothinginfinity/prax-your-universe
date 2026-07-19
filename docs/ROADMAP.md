@@ -3,7 +3,7 @@
 **Project:** `nothinginfinity/prax-your-universe`  
 **Live application:** `https://prax-your-universe.jaredtechfit.workers.dev`  
 **Roadmap status:** Canonical planning document  
-**Updated:** July 18, 2026
+**Updated:** July 19, 2026
 
 ## 1. North star
 
@@ -412,12 +412,15 @@ The next active release is **v0.2.0 — Local Graph Core**.
 - Add deletion policy for connected edges.
 - Add node-type visual metadata.
 
-### Work package PUX-005 — Import and export
+### Work package PUX-005 — Import and export — complete
 
 - Define a versioned Prax JSON bundle.
 - Export nodes, edges, layouts, and metadata.
 - Validate imports before mutation.
 - Preserve IDs and provenance during round trips.
+- Use replace-only import with complete pre-mutation validation and explicit destructive confirmation.
+- Preserve one canonical universe root and roll back graph, persistence, and scene state on replacement failure.
+- Verify export, destructive import, reload persistence, malformed-payload rejection, and desktop/mobile behavior in production.
 
 ### Work package PUX-006 — Validation and tests
 
