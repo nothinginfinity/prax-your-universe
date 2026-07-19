@@ -98,9 +98,13 @@ try {
   checkpoint = 'submit add-link form';
   await page.click('#submit-link-btn');
   checkpoint = 'wait for node-plus-edge mutation';
-  await page.waitForFunction((expectedTitle) => (
-    globalThis.__PRAX_TEST__?.getState().nodes.some((node) => node.title === expectedTitle)
-  ), title, { timeout: 15000 });
+  await page.waitForFunction((expectedTitle) => {
+    const state = globalThis.__PRAX_TEST__?.getState();
+    const node = state?.nodes.find((candidate) => candidate.title === expectedTitle);
+    if (!node) return false;
+    const edge = state.edges.find((candidate) => candidate.toNodeId === node.id && candidate.edgeType === 'contains');
+    return Boolean(edge && state.renderedEdges.some((rendered) => rendered.edgeId === edge.id));
+  }, title, { timeout: 15000 });
   state = await readState();
   await page.screenshot({ path: `${artifactDir}/desktop-after-add.png`, fullPage: true });
   checkpoint = 'validate node-plus-edge mutation';
