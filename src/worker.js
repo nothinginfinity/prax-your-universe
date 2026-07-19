@@ -13,9 +13,8 @@ export default {
       return json({
         ok: true,
         app: 'prax-your-universe',
-        version: '0.2.0-pux.1',
-        schema_version: 1,
-        canonical_store: 'local-client-graph',
+        version: '0.2.0-pux.2',
+        canonical_store: 'indexeddb-local',
         semantic_index: 'not-configured'
       });
     }
