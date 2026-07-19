@@ -53,13 +53,13 @@ jobs:
       - run: npm install
       - run: npm install --no-save --package-lock=false playwright@1.55.0
       - run: npx playwright install --with-deps chromium
-      - run: node scripts/verify-pux004-live.mjs
+      - run: node scripts/verify-pux005-live.mjs
         env:
           PRAX_LIVE_URL: https://prax-your-universe.jaredtechfit.workers.dev
-          PRAX_VISUAL_ARTIFACT_DIR: artifacts/pux004-live
+          PRAX_VISUAL_ARTIFACT_DIR: artifacts/pux005-live
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: pux004-live-browser-evidence
-          path: artifacts/pux004-live
+          name: pux005-live-browser-evidence
+          path: artifacts/pux005-live
           if-no-files-found: warn

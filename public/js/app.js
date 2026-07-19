@@ -1,9 +1,17 @@
 import { readHealth } from './api-client.js';
-import { commitGraphMutation } from './graph-mutations.js';
+import { commitGraphMutation, commitGraphReplacement } from './graph-mutations.js';
 import { GraphValidationError, UNIVERSE_ROOT_NODE_TYPE } from './graph-schema.js';
 import { GraphStore, createSeedSnapshot, upgradeGraphSnapshot } from './graph-store.js';
 import { IndexedDbRepositoryError, PraxIndexedDbRepository } from './indexeddb-repository.js';
+import {
+  PRAX_IMPORT_MAX_BYTES,
+  PraxBundleError,
+  createPraxExport,
+  parsePraxBundleText
+} from './prax-bundle.js';
 import { PraxScene, getNodeVisualMetadata } from './scene.js';
+
+const APP_VERSION = '0.2.0-pux.5';
 
 const infoPanel = document.querySelector('#info-panel');
 const infoTitle = document.querySelector('#info-title');
@@ -23,8 +31,20 @@ const bodyInput = document.querySelector('#node-body-input');
 const urlField = document.querySelector('#node-url-field');
 const bodyField = document.querySelector('#node-body-field');
 const statusPill = document.querySelector('#status-pill');
+const transferStatus = document.querySelector('#transfer-status');
 const viewToggleButton = document.querySelector('#view-toggle-btn');
 const submitNodeButton = document.querySelector('#submit-node-btn');
+const exportButton = document.querySelector('#export-btn');
+const importButton = document.querySelector('#import-btn');
+const importFileInput = document.querySelector('#import-file-input');
+const importModal = document.querySelector('#import-modal-backdrop');
+const importFilename = document.querySelector('#import-filename');
+const importUniverseName = document.querySelector('#import-universe-name');
+const importCounts = document.querySelector('#import-counts');
+const importNormalization = document.querySelector('#import-normalization');
+const importPersistenceWarning = document.querySelector('#import-persistence-warning');
+const confirmImportButton = document.querySelector('#confirm-import-btn');
+const cancelImportButton = document.querySelector('#cancel-import-btn');
 
 let repository = null;
 let persistenceLabel = 'Memory only';
@@ -32,9 +52,17 @@ let workerLabel = 'Worker checking';
 let selectedNodeId = null;
 let editingNodeId = null;
 let modalMode = 'create';
+let pendingImport = null;
+let transferMessage = 'Import/export ready';
 
 const renderStatus = () => {
   statusPill.textContent = `${workerLabel} · ${persistenceLabel}`;
+  transferStatus.textContent = transferMessage;
+};
+
+const setTransferStatus = (message) => {
+  transferMessage = message;
+  renderStatus();
 };
 
 const initializeStore = async () => {
@@ -79,11 +107,12 @@ const showNode = (node) => {
 };
 
 const showMutationError = (error) => {
-  const firstIssue = error instanceof GraphValidationError ? error.issues[0]?.message : null;
+  const graphIssue = error instanceof GraphValidationError ? error.issues[0]?.message : null;
+  const bundleMessage = error instanceof PraxBundleError ? error.message : null;
   const persistenceMessage = error instanceof IndexedDbRepositoryError
     ? 'The change was not saved. Your previous local graph is still intact.'
     : null;
-  alert(firstIssue ?? persistenceMessage ?? error.message ?? 'The graph could not be updated.');
+  alert(graphIssue ?? bundleMessage ?? persistenceMessage ?? error.message ?? 'The graph could not be updated.');
 };
 
 const scene = new PraxScene(document.querySelector('#main-canvas'), (nodeId) => {
@@ -93,13 +122,21 @@ scene.init();
 scene.setView(store.getPreferredLayout());
 scene.replaceGraph(store.listNodes(), store.listEdges());
 
+const projectSnapshot = (snapshot) => {
+  scene.replaceGraph(snapshot.nodes, snapshot.edges);
+  scene.setView(store.getPreferredLayout());
+};
+
 const getPuxVerificationState = () => {
   const snapshot = store.snapshot();
   return {
     workerLabel,
     persistenceLabel,
+    transferMessage,
     selectedNodeId,
     currentView: scene.getView(),
+    importModalVisible: importModal.classList.contains('visible'),
+    pendingImportSummary: pendingImport?.summary ?? null,
     viewport: {
       width: innerWidth,
       height: innerHeight,
@@ -109,23 +146,31 @@ const getPuxVerificationState = () => {
     roots: snapshot.nodes
       .filter(({ nodeType }) => nodeType === UNIVERSE_ROOT_NODE_TYPE)
       .map(({ id, universeId }) => ({ id, universeId })),
-    nodes: snapshot.nodes.map(({ id, universeId, nodeType, title, body, url, createdAt, updatedAt }) => ({
+    universes: snapshot.universes.map(({ id, name, originId, provenance }) => ({ id, name, originId, provenance })),
+    nodes: snapshot.nodes.map(({ id, originId, universeId, nodeType, title, body, url, createdAt, updatedAt, provenance }) => ({
       id,
+      originId,
       universeId,
       nodeType,
       title,
       body,
       url,
       createdAt,
-      updatedAt
+      updatedAt,
+      provenance
     })),
-    edges: snapshot.edges.map(({ id, universeId, edgeType, fromNodeId, toNodeId }) => ({
+    edges: snapshot.edges.map(({ id, originId, universeId, edgeType, fromNodeId, toNodeId, provenance }) => ({
       id,
+      originId,
       universeId,
       edgeType,
       fromNodeId,
-      toNodeId
+      toNodeId,
+      provenance
     })),
+    layouts: snapshot.layouts,
+    layoutNodes: snapshot.layoutNodes,
+    settings: snapshot.settings,
     nodePositions: [...scene.meshByNodeId].map(([nodeId, mesh]) => ({
       nodeId,
       position: [mesh.position.x, mesh.position.y, mesh.position.z]
@@ -147,8 +192,32 @@ const getPuxVerificationState = () => {
   };
 };
 
+const closeModal = () => {
+  modal.classList.remove('visible');
+  editingNodeId = null;
+  modalMode = 'create';
+};
+
+const updateViewButton = () => {
+  const view = scene.getView();
+  viewToggleButton.textContent = `View: ${view[0].toUpperCase()}${view.slice(1)}`;
+};
+
+const replaceUniverse = async (snapshot) => {
+  const committed = await commitGraphReplacement({
+    store,
+    repository,
+    snapshot,
+    project: projectSnapshot
+  });
+  showNode(null);
+  closeModal();
+  updateViewButton();
+  return committed;
+};
+
 const testMilestone = new URLSearchParams(location.search).get('puxTest');
-if (['003', '004'].includes(testMilestone)) {
+if (['003', '004', '005'].includes(testMilestone)) {
   Object.defineProperty(globalThis, '__PRAX_TEST__', {
     configurable: false,
     enumerable: false,
@@ -159,15 +228,27 @@ if (['003', '004'].includes(testMilestone)) {
         const node = store.getNode(nodeId);
         showNode(node);
         return Boolean(node);
+      },
+      createExport: (options = {}) => createPraxExport(store.snapshot(), {
+        applicationVersion: APP_VERSION,
+        ...options
+      }),
+      parseImport: (text, options = {}) => parsePraxBundleText(text, {
+        applicationVersion: APP_VERSION,
+        ...options
+      }),
+      replaceFromText: async (text, options = {}) => {
+        const parsed = parsePraxBundleText(text, {
+          applicationVersion: APP_VERSION,
+          ...options
+        });
+        await replaceUniverse(parsed.snapshot);
+        return parsed.summary;
       }
     })
   });
 }
 
-const updateViewButton = () => {
-  const view = scene.getView();
-  viewToggleButton.textContent = `View: ${view[0].toUpperCase()}${view.slice(1)}`;
-};
 updateViewButton();
 
 viewToggleButton.addEventListener('click', async () => {
@@ -192,12 +273,6 @@ const syncNodeTypeFields = () => {
   const nodeType = nodeTypeInput.value;
   urlField.hidden = nodeType !== 'link';
   bodyField.hidden = nodeType !== 'note';
-};
-
-const closeModal = () => {
-  modal.classList.remove('visible');
-  editingNodeId = null;
-  modalMode = 'create';
 };
 
 const openCreateModal = () => {
@@ -297,8 +372,118 @@ deleteNodeButton.addEventListener('click', async () => {
   }
 });
 
+const triggerDownload = ({ json, filename, mimeType }) => {
+  const blob = new Blob([json], { type: mimeType });
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  anchor.hidden = true;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+};
+
+exportButton.addEventListener('click', () => {
+  exportButton.disabled = true;
+  try {
+    const result = createPraxExport(store.snapshot(), { applicationVersion: APP_VERSION });
+    triggerDownload(result);
+    setTransferStatus(`Exported ${result.bundle.graph.nodes.length} nodes`);
+  } catch (error) {
+    setTransferStatus('Export failed');
+    showMutationError(error);
+  } finally {
+    exportButton.disabled = false;
+  }
+});
+
+const closeImportModal = ({ resetFile = true } = {}) => {
+  importModal.classList.remove('visible');
+  pendingImport = null;
+  confirmImportButton.disabled = false;
+  if (resetFile) importFileInput.value = '';
+};
+
+const openImportSummary = (parsed, filename) => {
+  pendingImport = parsed;
+  const { summary } = parsed;
+  importFilename.textContent = filename;
+  importUniverseName.textContent = summary.universeName;
+  importCounts.textContent = `${summary.nodeCount} nodes · ${summary.edgeCount} edges · ${summary.layoutCount} layouts`;
+  const additions = [];
+  if (summary.addedRootCount) additions.push(`${summary.addedRootCount} canonical root`);
+  if (summary.addedDefaultEdgeCount) additions.push(`${summary.addedDefaultEdgeCount} default edges`);
+  importNormalization.textContent = additions.length
+    ? `Legacy normalization will add ${additions.join(' and ')}.`
+    : 'No topology repair is required.';
+  importPersistenceWarning.hidden = Boolean(repository);
+  importModal.classList.add('visible');
+  confirmImportButton.focus();
+};
+
+importButton.addEventListener('click', () => importFileInput.click());
+
+importFileInput.addEventListener('change', async () => {
+  const file = importFileInput.files?.[0];
+  if (!file) return;
+  importButton.disabled = true;
+  setTransferStatus('Validating import…');
+  try {
+    if (file.size > PRAX_IMPORT_MAX_BYTES) {
+      throw new PraxBundleError(`Import exceeds the ${PRAX_IMPORT_MAX_BYTES}-byte limit.`, {
+        code: 'file_too_large',
+        path: 'file'
+      });
+    }
+    const parsed = parsePraxBundleText(await file.text(), {
+      filename: file.name,
+      applicationVersion: APP_VERSION
+    });
+    openImportSummary(parsed, file.name);
+    setTransferStatus('Import validated');
+  } catch (error) {
+    importFileInput.value = '';
+    setTransferStatus('Import rejected');
+    showMutationError(error);
+  } finally {
+    importButton.disabled = false;
+  }
+});
+
+cancelImportButton.addEventListener('click', () => {
+  closeImportModal();
+  setTransferStatus('Import cancelled');
+});
+
+confirmImportButton.addEventListener('click', async () => {
+  if (!pendingImport) return;
+  const candidate = pendingImport;
+  confirmImportButton.disabled = true;
+  cancelImportButton.disabled = true;
+  setTransferStatus('Replacing universe…');
+  try {
+    await replaceUniverse(candidate.snapshot);
+    closeImportModal();
+    setTransferStatus(`Imported ${candidate.summary.nodeCount} nodes`);
+  } catch (error) {
+    setTransferStatus('Import rolled back');
+    showMutationError(error);
+  } finally {
+    confirmImportButton.disabled = false;
+    cancelImportButton.disabled = false;
+  }
+});
+
 addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && modal.classList.contains('visible')) closeModal();
+  if (event.key !== 'Escape') return;
+  if (importModal.classList.contains('visible')) {
+    closeImportModal();
+    setTransferStatus('Import cancelled');
+  } else if (modal.classList.contains('visible')) {
+    closeModal();
+  }
 });
 
 addEventListener('beforeunload', () => repository?.close());

@@ -21,7 +21,8 @@ canvas {
   transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.controls-top { top: 20px; left: 20px; align-items: center; }
+.controls-top { top: 20px; left: 20px; display: grid; gap: 0.55rem; max-width: calc(100vw - 40px); }
+.control-row, .status-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.55rem; }
 .add-control { bottom: 20px; left: 50%; transform: translateX(-50%); }
 
 .btn {
@@ -41,8 +42,9 @@ canvas {
 .btn:hover { background: rgba(50, 50, 55, 0.9); transform: translateY(-2px); }
 .btn:disabled { cursor: wait; opacity: 0.65; transform: none; }
 .add-btn { font-size: 1.5rem; padding: 1rem 1.5rem; border-radius: 999px; background: #2563eb; }
-.danger-btn { background: rgba(153, 27, 27, 0.82); }
+.danger-btn { background: rgba(153, 27, 27, 0.9); }
 .status-pill { padding: 0.55rem 0.8rem; border-radius: 999px; background: rgba(20, 20, 25, 0.8); color: #9ca3af; font-size: 0.75rem; }
+.transfer-status { color: #bfdbfe; }
 
 #info-panel {
   top: 20px;
@@ -66,10 +68,10 @@ canvas {
 #info-link { display: block; margin-top: 1rem; text-align: center; background: #0077b6; }
 .info-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 1rem; }
 
-#modal-backdrop {
+.modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(10px);
   z-index: 200;
   display: flex;
@@ -79,21 +81,30 @@ canvas {
   pointer-events: none;
 }
 
-#modal-backdrop.visible { opacity: 1; pointer-events: all; }
-.modal-container { background: rgba(30, 30, 35, 0.97); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 1rem; padding: 2rem; width: 90%; max-width: 520px; max-height: calc(100vh - 32px); overflow-y: auto; }
+.modal-backdrop.visible { opacity: 1; pointer-events: all; }
+.modal-container { background: rgba(30, 30, 35, 0.98); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 1rem; padding: 2rem; width: 90%; max-width: 520px; max-height: calc(100vh - 32px); overflow-y: auto; box-sizing: border-box; }
 .modal-label { display: block; color: #d1d5db; font-size: 0.8rem; font-weight: 700; margin: 0 0 0.4rem; }
 .modal-input { box-sizing: border-box; width: 100%; background: #111; border: 1px solid #444; color: #fff; padding: 1rem; border-radius: 0.5rem; font-size: 1rem; margin-bottom: 1rem; }
 .modal-input:disabled { color: #9ca3af; background: #18181b; }
 .modal-textarea { min-height: 150px; resize: vertical; font-family: inherit; line-height: 1.5; }
 .modal-actions { display: flex; gap: 1rem; }
+.warning-badge { display: inline-flex; border-radius: 999px; padding: 0.35rem 0.7rem; background: rgba(220, 38, 38, 0.2); color: #fecaca; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+.import-warning { color: #fecaca; line-height: 1.55; }
+.import-summary { display: grid; gap: 0.75rem; margin: 1.25rem 0; }
+.import-summary div { display: grid; grid-template-columns: minmax(90px, 0.35fr) 1fr; gap: 0.75rem; padding: 0.75rem; border-radius: 0.75rem; background: rgba(0, 0, 0, 0.28); }
+.import-summary dt { color: #9ca3af; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; }
+.import-summary dd { margin: 0; overflow-wrap: anywhere; color: #f3f4f6; }
+.memory-warning { padding: 0.8rem; border: 1px solid rgba(251, 191, 36, 0.4); border-radius: 0.75rem; color: #fde68a; background: rgba(120, 53, 15, 0.25); }
 
 @media (max-width: 640px) {
-  .controls-top { top: 12px; left: 12px; gap: 0.5rem; }
-  .controls-top .btn { padding: 0.65rem 0.9rem; }
-  .status-pill { max-width: 44vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .controls-top { top: 10px; left: 10px; max-width: calc(100vw - 20px); gap: 0.4rem; }
+  .control-row, .status-row { gap: 0.4rem; }
+  .controls-top .btn { padding: 0.58rem 0.72rem; font-size: 0.78rem; }
+  .status-pill { max-width: calc(50vw - 18px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.45rem 0.6rem; }
   #info-panel { top: auto; right: 12px; bottom: 84px; width: calc(100vw - 24px); transform: translateY(140%); }
   #info-panel.visible { transform: translateY(0); }
   .modal-container { padding: 1.25rem; width: calc(100% - 24px); }
   .modal-actions { flex-direction: column; gap: 0.75rem; }
   .modal-actions .btn { width: 100%; }
+  .import-summary div { grid-template-columns: 1fr; gap: 0.3rem; }
 }

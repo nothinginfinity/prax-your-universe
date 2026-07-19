@@ -12,9 +12,17 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div class="ui-element flex space-x-4 controls-top">
-    <button id="view-toggle-btn" class="btn">View: Sphere</button>
-    <span id="status-pill" class="status-pill">Local graph</span>
+  <div class="ui-element controls-top">
+    <div class="control-row">
+      <button id="view-toggle-btn" class="btn">View: Sphere</button>
+      <button id="export-btn" class="btn">Export</button>
+      <button id="import-btn" class="btn">Import</button>
+      <input id="import-file-input" type="file" accept=".prax.json,.json,application/json" hidden>
+    </div>
+    <div class="status-row">
+      <span id="status-pill" class="status-pill">Local graph</span>
+      <span id="transfer-status" class="status-pill transfer-status" aria-live="polite">Import/export ready</span>
+    </div>
   </div>
 
   <div class="ui-element add-control">
@@ -35,7 +43,7 @@
     </div>
   </aside>
 
-  <div id="modal-backdrop" class="ui-element" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div id="modal-backdrop" class="ui-element modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-container">
       <h2 id="modal-title" class="text-2xl font-bold mb-4">Add a new node</h2>
       <label class="modal-label" for="node-type-input">Node type</label>
@@ -56,6 +64,25 @@
       <div class="modal-actions">
         <button id="submit-node-btn" class="btn flex-grow bg-blue-600">Add Node</button>
         <button class="btn flex-grow bg-gray-600 modal-cancel-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="import-modal-backdrop" class="ui-element modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
+    <div class="modal-container import-modal-container">
+      <span class="warning-badge">Destructive replacement</span>
+      <h2 id="import-modal-title" class="text-2xl font-bold mb-4">Replace the current universe?</h2>
+      <p class="import-warning">The validated file will replace every node, edge, layout, and local preference in the current universe.</p>
+      <dl class="import-summary">
+        <div><dt>File</dt><dd id="import-filename"></dd></div>
+        <div><dt>Universe</dt><dd id="import-universe-name"></dd></div>
+        <div><dt>Contents</dt><dd id="import-counts"></dd></div>
+        <div><dt>Normalization</dt><dd id="import-normalization"></dd></div>
+      </dl>
+      <p id="import-persistence-warning" class="memory-warning" hidden>IndexedDB is unavailable. This replacement will exist in memory only and will not survive reload.</p>
+      <div class="modal-actions">
+        <button id="confirm-import-btn" class="btn danger-btn flex-grow">Replace Universe</button>
+        <button id="cancel-import-btn" class="btn flex-grow bg-gray-600">Cancel</button>
       </div>
     </div>
   </div>
