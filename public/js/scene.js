@@ -4,6 +4,8 @@ const hueFromId = (id) => {
   return Math.abs(hash % 360) / 360;
 };
 
+const PROJECTION_TYPES = Object.freeze(['sphere', 'grid']);
+
 export class PraxScene {
   constructor(canvas, onSelect) {
     this.canvas = canvas;
@@ -106,10 +108,19 @@ export class PraxScene {
     this.camera.position.set(0, 0, this.currentView === 'sphere' ? radius * 2.2 : 25);
   }
 
-  toggleView() {
-    this.currentView = this.currentView === 'sphere' ? 'grid' : 'sphere';
+  getView() {
+    return this.currentView;
+  }
+
+  setView(view) {
+    if (!PROJECTION_TYPES.includes(view)) throw new Error(`Unsupported projection: ${view}`);
+    this.currentView = view;
     this.layout();
     return this.currentView;
+  }
+
+  toggleView() {
+    return this.setView(this.currentView === 'sphere' ? 'grid' : 'sphere');
   }
 
   movePointer(event) {
