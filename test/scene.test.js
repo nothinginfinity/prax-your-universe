@@ -284,3 +284,33 @@ test('scene node removal disposes the node and every connected rendered edge', (
   }
   assert.equal(scene.meshByNodeId.has(second.id), true);
 });
+
+test('full scene replacement disposes removed resources and creates no duplicate meshes or lines', () => {
+  const firstStore = new GraphStore();
+  firstStore.addNoteWithDefaultEdge('Removed by import', 'Old body');
+  const replacementStore = new GraphStore();
+  replacementStore.addLinkWithDefaultEdge('Imported link', 'https://example.com/imported-scene');
+  replacementStore.addNoteWithDefaultEdge('Imported note', 'New body');
+
+  const scene = new PraxScene({ style: {} }, () => {}, { three: THREE });
+  scene.camera = { position: new FakeVector3() };
+  scene.replaceGraph(firstStore.listNodes(), firstStore.listEdges());
+  const oldMeshes = [...scene.meshByNodeId.values()];
+  const oldLines = [...scene.edgeObjectById.values()];
+
+  scene.replaceGraph(replacementStore.listNodes(), replacementStore.listEdges());
+  scene.replaceGraph(replacementStore.listNodes(), replacementStore.listEdges());
+
+  for (const mesh of oldMeshes) {
+    assert.equal(mesh.geometry.disposed, true);
+    assert.equal(mesh.material.disposed, true);
+  }
+  for (const line of oldLines) {
+    assert.equal(line.geometry.disposed, true);
+    assert.equal(line.material.disposed, true);
+  }
+  assert.equal(scene.meshByNodeId.size, replacementStore.listNodes().length);
+  assert.equal(scene.edgeObjectById.size, replacementStore.listEdges().length);
+  assert.equal(new Set(scene.meshByNodeId.keys()).size, scene.meshByNodeId.size);
+  assert.equal(new Set(scene.edgeObjectById.keys()).size, scene.edgeObjectById.size);
+});
