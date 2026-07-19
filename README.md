@@ -68,6 +68,6 @@ Then open `http://localhost:8000`.
 
 ## Status
 
-This repository currently contains the original standalone prototype and an architecture direction for the next iteration. Cloudflare bindings, persistence, authentication, and AI inference have not yet been added.
+The repository now contains the preserved standalone prototype and the modular Cloudflare Worker build deployed at `https://prax-your-universe.jaredtechfit.workers.dev`. The live build supports spatial navigation and in-session link creation. Persistent graph storage, authentication, semantic indexing, and AI inference have not yet been added.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the proposed domain model and phased build plan.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the domain model, [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for deployment details, and [`docs/ROADMAP.md`](docs/ROADMAP.md) for the canonical product and engineering roadmap.
