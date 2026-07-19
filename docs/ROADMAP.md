@@ -104,16 +104,29 @@ The user should be able to build a small universe, refresh the page, search it, 
 - Show the selected node's immediate neighborhood.
 - Add reset-view behavior.
 
-### v0.2.2 — Spatial focus and usability
+### v0.2.2 — Galaxy Focus and spatial usability
+
+**Signature experience:** Selecting a node temporarily reorganizes the visible universe around the user's current thought without mutating the canonical graph.
 
 - Add hover labels and a persistent selected-node label.
 - Add node-type visual identities.
-- Add focus mode for one node and its neighbors.
+- Add **Galaxy Focus** as a named projection state.
+- Fly the camera smoothly toward the focused node.
+- Move directly connected nodes into a readable local orbit.
+- Preserve deterministic edge relationships while the focused layout is active.
+- Display second-degree or semantically suggested nodes as a visually distinct outer halo when that data is available.
+- Fade, dim, or push unrelated nodes into the background without deleting or disconnecting them.
+- Keep the selected node and its explicit neighborhood inspectable throughout the transition.
+- Provide Back, Escape, and Reset View actions that restore the prior projection and camera state.
+- Prevent repeated focus actions from stacking irreversible transforms.
+- Add reduced-motion behavior and an immediate-transition accessibility fallback.
 - Improve mobile tap targets and modal behavior.
 - Add keyboard navigation and accessibility fallbacks.
 - Add saved layout preferences.
 - Add basic rendering budgets and level-of-detail behavior.
 - Add empty-state and recovery UI.
+
+Galaxy Focus is a projection and interaction mode. It must not rewrite node identity, canonical coordinates, explicit edges, or semantic-index data.
 
 ### v0.2 acceptance criteria
 
@@ -121,6 +134,9 @@ The user should be able to build a small universe, refresh the page, search it, 
 - Data survives reloads and browser restarts.
 - Import/export round-trips without changing IDs or relationships.
 - Search locates a node and flies the camera to it.
+- Galaxy Focus reorganizes a selected node's neighborhood without changing canonical graph relationships.
+- Exiting Galaxy Focus restores the prior projection and camera state reliably.
+- Galaxy Focus remains usable with reduced motion and on mobile-sized screens.
 - Sphere and grid views render the same graph state.
 - The application remains usable on mobile.
 - No cloud mutation endpoint is required.
@@ -410,6 +426,19 @@ The next active release is **v0.2.0 — Local Graph Core**.
 - Test invalid URLs and malformed imports.
 - Test edge cleanup and graph integrity.
 - Perform desktop and mobile live verification.
+
+### Queued work package PUX-007 — Galaxy Focus
+
+**Dependencies:** PUX-003 root node and edges, plus v0.2.1 Searchlight camera controls.
+
+- Define focused, entering, active, and exiting projection states.
+- Capture the previous camera and layout state before entry.
+- Compute a stable local neighborhood from explicit graph edges.
+- Animate the focused node, direct neighbors, outer halo, and unrelated background groups independently.
+- Keep explicit edges visually distinct from future semantic suggestions.
+- Add Back, Escape, Reset View, and reduced-motion behavior.
+- Test repeated entry and exit without coordinate drift or leaked scene objects.
+- Verify performance on desktop and mobile with realistic local graph sizes.
 
 ## 6. Build order and dependency gates
 
