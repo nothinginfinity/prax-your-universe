@@ -54,11 +54,13 @@ canvas {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
   backdrop-filter: blur(12px);
-  transform: translateX(120%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
   overflow: hidden;
 }
 
-#info-panel.visible { transform: translateX(0); }
+#info-panel.visible { opacity: 1; visibility: visible; pointer-events: all; }
 .info-content { padding: 20px; }
 .node-type-badge { display: inline-flex; padding: 0.3rem 0.6rem; border-radius: 999px; background: rgba(56, 189, 248, 0.16); color: #bae6fd; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
 .node-type-badge[data-node-type="note"] { background: rgba(251, 191, 36, 0.16); color: #fde68a; }
@@ -103,8 +105,7 @@ canvas {
   .control-row, .status-row { gap: 0.4rem; }
   .controls-top .btn { padding: 0.58rem 0.72rem; font-size: 0.78rem; }
   .status-pill { max-width: calc(50vw - 18px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.45rem 0.6rem; }
-  #info-panel { top: auto; right: 12px; bottom: 84px; width: calc(100vw - 24px); transform: translateY(140%); }
-  #info-panel.visible { transform: translateY(0); }
+  #info-panel { top: auto; right: 12px; bottom: 84px; width: calc(100vw - 24px); }
   .modal-container { padding: 1.25rem; width: calc(100% - 24px); }
   .modal-actions { flex-direction: column; gap: 0.75rem; }
   .modal-actions .btn { width: 100%; }
