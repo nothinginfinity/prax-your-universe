@@ -79,7 +79,7 @@ Required domain fields:
 
 - `name`
 
-PUX-001 creates a stable default universe record. PUX-003 will add a canonical node with `nodeType: "universe"` to serve as the visible graph root.
+PUX-001 creates a stable default universe record. PUX-003 adds one canonical node with `nodeType: "universe_root"` as the visible and topological root for each universe.
 
 ## Node record
 
@@ -97,6 +97,7 @@ Optional domain fields:
 Supported node types:
 
 - `universe`
+- `universe_root`
 - `link`
 - `note`
 - `project`
@@ -123,6 +124,8 @@ Supported edge types:
 - `belongs_to`
 - `related_to`
 - `created_from`
+
+A universe root may only originate `contains` edges to non-root nodes in the same universe. Strict PUX-003 snapshots require exactly one deterministic root per universe and one root `contains` edge for every non-root node.
 
 Both endpoints must exist in the same universe. Version 1 rejects self-referential edges.
 
