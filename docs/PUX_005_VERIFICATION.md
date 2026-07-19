@@ -1,199 +1,254 @@
-# PUX-005 Verification
+# PUX-005 Verification — Import and Export
 
-## Release identity
+**Milestone:** PUX-005 — Import and Export  
+**Application version:** `0.2.0-pux.5`  
+**Final implementation commit:** `2d551b4d1c9fcf70e00622bbb030246bfd5c6b52`  
+**Final successful workflow:** `29675770334`  
+**Live application:** `https://prax-your-universe.jaredtechfit.workers.dev`  
+**Graph schema version:** `1`  
+**IndexedDB database version:** `1`  
+**Prax bundle version:** `1`
 
-- Work package: PUX-005 — Import and export
-- Application version: `0.2.0-pux.5`
-- Final implementation commit: `2d551b4d1c9fcf70e00622bbb030246bfd5c6b52`
-- Final implementation workflow: `29675770334`
-- Canonical starting PUX-004 closeout: `5488df5cf32d9307a79bb76c792768c2f05a55c5a6fc7070b916371d87f174b5`
-- PUX-005 assessment stone: `ac113ead0cf3805f93f7ce73708eabb0b29a99caead9c00d15fad71a1eed9eaa`
-- Prax bundle version: `1`
-- Graph schema version: `1`
-- IndexedDB database version: `1`
+## Verdict
 
-PUX-005 is a client-side, replace-only import/export release. It adds no public mutation API, no cloud persistence binding, no graph-schema migration, and no IndexedDB database-version migration.
+PUX-005 is complete.
 
-## Accepted behavior
+The final commit passed the complete GitHub Actions validation, deployment, dedicated production browser verifier, and an independent desktop/mobile visual-browser audit. The application exports a deterministic, versioned Prax JSON bundle and imports validated bundles through a destructive, replace-only workflow without permitting malformed input or failed persistence to leave partial graph state.
 
-The final implementation provides:
+No IndexedDB schema migration was introduced. The Worker still exposes no public mutation API.
 
-- a versioned `prax-json` envelope independent from the graph schema version;
-- deterministic export ordering for all canonical collections;
-- export of the universe, nodes, edges, layouts, layout-node records, settings, IDs, timestamps, and provenance;
-- preservation of link URLs, note bodies, node types, edge types, stable IDs, and provenance;
-- safe optional envelope metadata preservation;
-- strict rejection of unknown structural fields and unsupported structural types;
-- explicit support for valid legacy version-1 raw graph snapshots;
-- deterministic application-level normalization of only missing roots and default root edges;
-- complete validation before confirmation, store mutation, IndexedDB writes, or scene replacement;
-- destructive import confirmation showing filename, universe, counts, and normalization effects;
-- replace-only import for exactly one universe;
-- persistence-first replacement;
-- rollback of the in-memory graph after persistence failure;
-- restoration of graph, persistence, and scene after projection failure;
-- full scene replacement with disposal of removed meshes and edge resources;
-- no duplicate mesh or edge-line registries after repeated replacement;
-- desktop and mobile import/export controls;
-- direct user-gesture file download and browser file-picker import;
-- explicit memory-only warning when IndexedDB is unavailable.
+## Canonical behavior
 
-Merge import was intentionally excluded because it is not required by the canonical PUX-005 roadmap and would require conflict policies that belong to later synchronization and multiple-universe work.
+### Export
 
-## Import rejection matrix
+The application exports one universe as a `prax-json` bundle with:
 
-The automated suite verifies rejection of:
+- `format: "prax-json"`;
+- `bundleVersion: 1`;
+- `graphSchemaVersion: 1`;
+- application and export metadata;
+- universes;
+- nodes, including the canonical universe root;
+- edges;
+- layouts;
+- layout-node records;
+- settings;
+- stable IDs, origin IDs, timestamps, schema versions, and provenance.
+
+Record collections are sorted by stable ID. Metadata extension object keys are normalized deterministically. Serialization uses formatted JSON with a final newline. The generated filename ends in `.prax.json`.
+
+Renderer-only state is intentionally excluded. Camera position, hover state, selected node, modal state, transient mesh order, and temporary scene projection coordinates are not exported. Canonical settings and persisted layout records are included.
+
+### Import
+
+PUX-005 supports **replace-only** import. Merge behavior is not implemented because it is not required by the canonical roadmap and would require unresolved conflict policies for IDs, roots, provenance, layouts, and settings.
+
+The complete file is read and validated before the destructive confirmation becomes available. Import is limited to 10 MiB and requires exactly one universe.
+
+The validator rejects:
 
 - malformed JSON;
 - unsupported bundle versions;
 - unsupported graph schema versions;
-- duplicate node IDs;
-- duplicate edge IDs;
+- unknown structural envelope or graph fields;
+- duplicate node or edge IDs;
 - multiple universes;
-- multiple roots;
+- multiple or non-deterministic universe roots;
 - edges with missing endpoints;
-- invalid root mutations and root topology;
-- unsupported node types;
-- unsupported edge types;
-- unknown structural envelope fields;
-- unknown structural graph fields;
+- cross-universe endpoints;
+- invalid root mutations;
+- invalid or missing root `contains` topology after normalization;
+- unknown node, edge, layout, or provenance types;
 - unsafe metadata keys;
-- oversized import files;
-- snapshots that fail canonical graph validation.
+- graph snapshots that fail application-level normalization.
 
-Rejected imports do not modify the active graph or persisted graph.
+Safe optional envelope metadata is preserved. Unknown structural invariants are rejected.
 
-## Automated validation
+### Legacy compatibility
 
-Final workflow `29675770334` checked out exact commit `2d551b4d1c9fcf70e00622bbb030246bfd5c6b52`.
+A raw graph-schema-version-1 snapshot is accepted as a legacy import shape. Application-level normalization adds only deterministic missing universe-root topology and default root `contains` edges. Existing IDs, content, timestamps, provenance, layouts, layout-node records, and settings are preserved.
 
-### Validate job
+This supports PUX-002-era snapshots without an IndexedDB migration. PUX-003 and later version-1 snapshots that already contain strict root topology import without topology repair.
 
-Job `88162822902` completed successfully.
+### Transaction and rollback semantics
 
-- `npm install`: passed with zero reported package vulnerabilities for the committed dependencies.
-- `npm test`: 67 tests passed, 0 failed.
-- JavaScript syntax checks: passed for source files and all live verifiers.
-- Wrangler deployment dry-run: passed.
+Import validation completes before `GraphStore` mutation or IndexedDB clearing begins.
 
-The PUX-005 additions include:
+Replacement uses a pre-operation snapshot and follows this order:
 
-- 12 bundle-format, round-trip, validation, compatibility, and rejection tests;
-- 3 replacement transaction and rollback tests;
-- 1 full-scene replacement, disposal, and duplicate-registry test.
+1. Replace the in-memory graph with the fully normalized candidate.
+2. Validate the strict replacement snapshot.
+3. Save the complete snapshot in one IndexedDB transaction.
+4. Project the committed graph into the scene.
 
-Existing persistence, graph schema, graph store, mutation, scene, and PUX-004 behavior remained green.
+If mutation or persistence fails, the previous `GraphStore` snapshot is restored and the scene is not projected with the failed candidate. IndexedDB transaction failure preserves the previous committed database state.
 
-### Deployment job
+If scene projection fails after persistence succeeds, the replacement helper restores the previous store, re-persists the previous snapshot, and restores the previous projection before surfacing the error.
 
-Job `88162845256` completed successfully.
+Malformed and unsupported files are rejected without changing the current graph.
 
-- dependency installation: passed;
-- `wrangler deploy`: passed;
-- production Worker and static assets were updated from the exact tested commit.
+## User safeguards
 
-### Production PUX-005 verifier
+Import requires a dedicated destructive-operation confirmation surface that displays:
 
-Job `88162876905` completed successfully.
+- source filename;
+- universe name;
+- node count;
+- edge count;
+- layout count;
+- whether legacy root topology will be added;
+- an explicit warning that the current universe will be replaced.
 
-The dedicated Playwright verifier confirmed:
+The file input accepts JSON-compatible files. Export uses the browser download surface. Desktop and mobile download behavior was verified in Chromium. Browsers that restrict programmatic downloads or file pickers may still apply platform-specific permission behavior.
 
-- `/api/health` returned HTTP 200 and `0.2.0-pux.5`;
-- bundle version `1` and replace-only readiness were exposed;
-- no public mutation API was exposed;
-- distinctive link and note nodes were created and persisted;
-- export produced a downloadable `.prax.json` file;
-- exported JSON retained the root, IDs, link URL, note body, and graph collections;
-- a different valid payload destructively replaced the current universe;
-- a node created after export disappeared during replacement;
-- imported titles, URL, note content, settings, and IDs appeared in the graph;
-- exactly one canonical root remained;
-- rendered node and edge registries matched canonical records;
-- no duplicate meshes or edge lines appeared;
-- the imported preferred grid layout was applied;
-- the imported universe survived page reload;
-- malformed JSON was rejected without graph mutation;
-- an unsupported bundle version was rejected without graph mutation;
-- desktop and mobile import confirmation controls were usable;
-- desktop and mobile export download behavior was observed;
-- browser evidence was uploaded by the workflow.
+## Rendering synchronization
 
-Rollback-sensitive persistence and projection failure paths are tested deterministically in the unit suite rather than through an unsafe production failure switch.
+Successful import performs a full scene replacement from the committed canonical graph.
 
-## Independent visual-browser verification
+Verification confirms:
 
-Final independent multi-viewport audit: `vb_2a8f90b0`.
+- removed node geometry and materials are disposed;
+- removed edge geometry and materials are disposed;
+- rendered node IDs equal canonical node IDs;
+- rendered edge IDs equal canonical edge IDs;
+- repeated full replacement creates no duplicate meshes;
+- repeated full replacement creates no duplicate edge lines;
+- the imported preferred sphere or grid setting is restored;
+- the imported graph remains visible after reload.
 
-### Desktop
+## Automated test evidence
 
-Receipt: `vb_2a8f90b0_0`
+The final source contains 67 Node test cases across the graph schema, graph store, mutation transaction boundary, IndexedDB repository, import/export bundle, and Three.js scene suites.
 
-- viewport: `1440 × 900`;
-- HTTP status: 200;
-- ready state: complete;
-- document dimensions: `1440 × 900`;
-- horizontal overflow: none;
-- console errors: 0;
-- page errors: 0;
-- failed requests: 0;
-- failed responses: 0;
-- visual warnings: none.
+Final workflow `29675770334` reported:
 
-### Mobile
+- `npm test`: success;
+- `npm run check`: success;
+- JavaScript syntax checks: success;
+- Wrangler deployment dry-run: success;
+- deployment: success;
+- dedicated PUX-005 live verifier: success.
 
-Receipt: `vb_2a8f90b0_1`
+The PUX-005-specific test coverage includes:
 
-- viewport: `390 × 844`;
-- HTTP status: 200;
-- ready state: complete;
-- document dimensions: `390 × 844`;
-- horizontal overflow: none;
-- console errors: 0;
-- page errors: 0;
-- failed requests: 0;
-- failed responses: 0;
-- visual warnings: none.
+- complete bundle export;
+- deterministic serialization;
+- stable-ID and provenance round trips;
+- link URL and note body preservation;
+- edge type preservation;
+- layout, layout-node, and settings preservation;
+- legacy version-1 normalization;
+- malformed JSON rejection;
+- unsupported bundle and graph versions;
+- duplicate node and edge IDs;
+- multiple universes and roots;
+- missing endpoints;
+- invalid root edges;
+- unsupported node and edge types;
+- unknown structural fields;
+- safe optional metadata preservation;
+- unsafe metadata rejection;
+- oversized file rejection;
+- replacement persistence ordering;
+- persistence-failure rollback;
+- projection-failure rollback and re-persistence;
+- render-resource disposal;
+- duplicate mesh and edge-line prevention.
 
-## Defects found and resolved during verification
+## Production live-verification evidence
 
-### Determinism test fixture defect
+The dedicated production verifier in `scripts/verify-pux005-live.mjs` passed on workflow `29675770334` and verified:
 
-The first core workflow failed because the test generated two different random graph identities and then compared their serialized output. The serializer was not shown to be nondeterministic. The test was corrected to serialize the same snapshot twice in commit `2c875fe34b03ff9b11883c293cd23d3770c6fe75`.
+- `/api/health` returned HTTP 200;
+- version `0.2.0-pux.5`;
+- milestone `PUX-005`;
+- bundle version `1`;
+- import/export enabled;
+- replace-only behavior;
+- no public mutation API;
+- link and note creation before export;
+- actual browser download and JSON inspection;
+- destructive replacement through the confirmation modal;
+- replacement of titles, URLs, and note bodies while preserving IDs;
+- removal of a node created after export;
+- preferred-layout replacement;
+- reload persistence;
+- malformed import rejection without graph mutation;
+- unsupported-version rejection without graph mutation;
+- one canonical root and one root `contains` edge per non-root node;
+- no duplicate rendered nodes or edges;
+- desktop import confirmation usability;
+- mobile file input, confirmation modal, cancel, and download behavior;
+- zero captured console errors, page errors, failed requests, or failed responses.
 
-Classification: test defect.
+## Independent visual-browser evidence
 
-### Hidden import modal intercepted node-form clicks
+Final independent audit: `vb_3af0a6d9`
 
-Workflow `29675597410` reached production and the live verifier discovered that a button inside the invisible import modal inherited `pointer-events: all`, intercepting the visible node form's submit action. Hidden modal descendants were made non-interactive, and invisible modals now use hidden visibility semantics in commit `5576ed4a04db96c381cd699320e6fe638c93fec9`.
+Desktop child run: `vb_3af0a6d9_0`
 
-Classification: product UI defect found by the verifier.
+- viewport: 1440 × 900;
+- HTTP 200;
+- ready state complete;
+- scroll width 1440;
+- viewport width 1440;
+- zero console errors;
+- zero page errors;
+- zero failed requests;
+- zero failed responses.
 
-### Off-canvas information panel caused desktop overflow
+Mobile child run: `vb_3af0a6d9_1`
 
-Independent visual audit `vb_ac1125fe` found a desktop document width of 1852 pixels at a 1440-pixel viewport. The transform-hidden information panel extended the document's scrollable width. The panel was changed to visibility and opacity hiding in final implementation commit `2d551b4d1c9fcf70e00622bbb030246bfd5c6b52`.
+- viewport: 390 × 844 with mobile/touch emulation;
+- HTTP 200;
+- ready state complete;
+- scroll width 390;
+- viewport width 390;
+- zero console errors;
+- zero page errors;
+- zero failed requests;
+- zero failed responses.
 
-Classification: product responsive-layout defect found by independent visual verification.
+The final desktop and mobile audit therefore found no horizontal overflow.
 
-### Unsuitable visual wait condition
+## Defect classification and corrections
 
-An initial independent audit waited for `networkidle` and timed out on the continuously animated Three.js application. The audit was rerun using the load event and deterministic evidence capture. No product network, console, or rendering error was associated with that timeout.
+### Test defect
 
-Classification: verifier configuration issue.
+The first core workflow failure compared exports generated from two separately randomized test graphs. The serializer was not shown to be nondeterministic. The fixture was corrected to serialize the same canonical snapshot twice.
 
-## Schema and infrastructure state
+### Product UI defects
 
-PUX-005 does not change the graph schema or database structure.
+The first PUX-005 live verifier found that an invisible import-modal child button inherited `pointer-events: all` and intercepted add-node modal clicks. Hidden modal descendants were made non-interactive until their modal is visible.
 
-- Graph schema remains version 1.
-- IndexedDB remains version 1.
-- Existing object stores already hold every exported collection.
-- Legacy normalization remains application-level and transactional.
-- No D1, KV, R2, Vectorize, or Workers AI binding was added.
-- No public upload or graph-mutation endpoint was added.
-- The Worker continues to serve static assets and the read-only health route.
+An independent visual audit then found that transform-based hiding of the information panel increased document scroll width. The hidden panel behavior was changed so desktop and mobile document width now equals viewport width.
 
-## Completion boundary
+### Verifier/tool condition
 
-Every PUX-005 acceptance criterion has passed through automated validation, exact workflow inspection, production browser verification, reload verification, and independent desktop/mobile visual evidence.
+An early independent visual-browser attempt waited for `networkidle`, which is unsuitable for the continuously animated Three.js application and timed out. The audit was rerun using the page `load` event. This was a wait-condition defect, not a product defect.
 
-PUX-006 has not been started.
+### Workflow, deployment, Cloudflare, and infrastructure
+
+No final workflow defect, deployment defect, Cloudflare binding defect, or infrastructure defect remains. The deployed Worker continues to use the static assets binding and read-only health route only.
+
+## Final acceptance result
+
+PUX-005 acceptance criteria are satisfied:
+
+- versioned Prax JSON bundle defined;
+- nodes, edges, layouts, layout-node records, settings, and metadata exported;
+- IDs and provenance preserved;
+- export-import round trip preserves semantics;
+- validation occurs before destructive mutation;
+- replace-only behavior confirmed;
+- one canonical root preserved;
+- malformed imports cannot partially overwrite state;
+- persistence and projection rollback paths are tested;
+- successful import synchronizes the complete scene;
+- imported state persists after reload;
+- desktop and mobile behavior verified;
+- graph schema remains version 1;
+- IndexedDB remains version 1;
+- no public mutation API introduced.
+
+PUX-006 was not started as part of this milestone.
