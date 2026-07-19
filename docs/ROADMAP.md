@@ -398,7 +398,7 @@ The next active release is **v0.2.0 — Local Graph Core**.
 - Hydrate the graph store during application startup.
 - Add transaction and error handling.
 
-### Work package PUX-003 — Root node and edges — active
+### Work package PUX-003 — Root node and edges — complete
 
 - Create one stable universe root node.
 - Connect newly created nodes through explicit default edges.
