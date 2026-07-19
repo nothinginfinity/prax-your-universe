@@ -23,19 +23,38 @@
 
   <aside id="info-panel" class="ui-element" aria-live="polite">
     <div class="info-content">
+      <span id="info-type" class="node-type-badge"></span>
       <h2 id="info-title"></h2>
       <p id="info-details"></p>
+      <p id="info-body"></p>
       <a id="info-link" href="#" target="_blank" rel="noopener noreferrer" class="btn">Visit Link</a>
+      <div id="info-actions" class="info-actions">
+        <button id="edit-node-btn" class="btn">Edit</button>
+        <button id="delete-node-btn" class="btn danger-btn">Delete</button>
+      </div>
     </div>
   </aside>
 
   <div id="modal-backdrop" class="ui-element" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-container">
-      <h2 id="modal-title" class="text-2xl font-bold mb-4">Add a new link</h2>
-      <input id="link-title-input" type="text" class="modal-input" placeholder="Title">
-      <input id="link-url-input" type="url" class="modal-input" placeholder="https://example.com">
-      <div class="flex gap-4">
-        <button id="submit-link-btn" class="btn flex-grow bg-blue-600">Add Link</button>
+      <h2 id="modal-title" class="text-2xl font-bold mb-4">Add a new node</h2>
+      <label class="modal-label" for="node-type-input">Node type</label>
+      <select id="node-type-input" class="modal-input">
+        <option value="link">Link</option>
+        <option value="note">Note</option>
+      </select>
+      <label class="modal-label" for="node-title-input">Title</label>
+      <input id="node-title-input" type="text" class="modal-input" placeholder="Title" maxlength="500">
+      <div id="node-url-field">
+        <label class="modal-label" for="node-url-input">URL</label>
+        <input id="node-url-input" type="url" class="modal-input" placeholder="https://example.com">
+      </div>
+      <div id="node-body-field" hidden>
+        <label class="modal-label" for="node-body-input">Note</label>
+        <textarea id="node-body-input" class="modal-input modal-textarea" placeholder="Capture the thought or context"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button id="submit-node-btn" class="btn flex-grow bg-blue-600">Add Node</button>
         <button class="btn flex-grow bg-gray-600 modal-cancel-btn">Cancel</button>
       </div>
     </div>

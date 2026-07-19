@@ -1,12 +1,19 @@
 import { UNIVERSE_ROOT_NODE_TYPE } from './graph-schema.js';
 
-const hueFromId = (id) => {
-  let hash = 0;
-  for (const character of id) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
-  return Math.abs(hash % 360) / 360;
-};
-
 const PROJECTION_TYPES = Object.freeze(['sphere', 'grid']);
+
+export const NODE_TYPE_VISUAL_METADATA = Object.freeze({
+  universe_root: Object.freeze({ label: 'Universe root', color: 0xffffff, radius: 0.8, emissiveIntensity: 0.65 }),
+  link: Object.freeze({ label: 'Link', color: 0x38bdf8, radius: 0.46, emissiveIntensity: 0.35 }),
+  note: Object.freeze({ label: 'Note', color: 0xfbbf24, radius: 0.46, emissiveIntensity: 0.32 }),
+  project: Object.freeze({ label: 'Project', color: 0xa78bfa, radius: 0.5, emissiveIntensity: 0.32 }),
+  document: Object.freeze({ label: 'Document', color: 0x34d399, radius: 0.46, emissiveIntensity: 0.3 }),
+  conversation: Object.freeze({ label: 'Conversation', color: 0xfb7185, radius: 0.46, emissiveIntensity: 0.3 }),
+  universe: Object.freeze({ label: 'Universe', color: 0xe5e7eb, radius: 0.55, emissiveIntensity: 0.4 })
+});
+
+export const getNodeVisualMetadata = (nodeType) => NODE_TYPE_VISUAL_METADATA[nodeType]
+  ?? Object.freeze({ label: 'Node', color: 0x94a3b8, radius: 0.44, emissiveIntensity: 0.25 });
 
 export const calculateProjectionPositions = (nodes) => {
   const positions = new Map();
@@ -52,6 +59,12 @@ export const calculateEdgeSegment = (edge, projectionPositions, view) => {
   const to = projectionPositions.get(edge.toNodeId)?.[view];
   if (!from || !to) throw new Error(`Edge ${edge.id} references a node without a ${view} position.`);
   return [from.x, from.y, from.z, to.x, to.y, to.z];
+};
+
+const setMaterialColor = (target, value) => {
+  if (target?.copy) target.copy(value);
+  else return value;
+  return target;
 };
 
 export class PraxScene {
@@ -105,19 +118,23 @@ export class PraxScene {
 
   createNodeObject(node) {
     const THREE = this.THREE;
-    const isRoot = node.nodeType === UNIVERSE_ROOT_NODE_TYPE;
-    const color = isRoot
-      ? new THREE.Color(0xffffff)
-      : new THREE.Color().setHSL(hueFromId(node.id), 0.8, 0.6);
+    const visual = getNodeVisualMetadata(node.nodeType);
+    const color = new THREE.Color(visual.color);
     const point = new THREE.Mesh(
-      new THREE.SphereGeometry(isRoot ? 0.8 : 0.4, isRoot ? 24 : 16, isRoot ? 24 : 16),
+      new THREE.SphereGeometry(visual.radius, node.nodeType === UNIVERSE_ROOT_NODE_TYPE ? 24 : 16, node.nodeType === UNIVERSE_ROOT_NODE_TYPE ? 24 : 16),
       new THREE.MeshLambertMaterial({
         color,
         emissive: color,
-        emissiveIntensity: isRoot ? 0.65 : 0.2
+        emissiveIntensity: visual.emissiveIntensity
       })
     );
-    point.userData = { nodeId: node.id, nodeType: node.nodeType };
+    point.userData = {
+      nodeId: node.id,
+      nodeType: node.nodeType,
+      nodeTitle: node.title,
+      visualKey: node.nodeType,
+      visualLabel: visual.label
+    };
     return point;
   }
 
@@ -137,7 +154,16 @@ export class PraxScene {
   updateNode(node) {
     const point = this.meshByNodeId.get(node.id);
     if (!point) return false;
+    const visual = getNodeVisualMetadata(node.nodeType);
+    const color = new this.THREE.Color(visual.color);
     point.userData.nodeType = node.nodeType;
+    point.userData.nodeTitle = node.title;
+    point.userData.visualKey = node.nodeType;
+    point.userData.visualLabel = visual.label;
+    point.material.color = setMaterialColor(point.material.color, color);
+    point.material.emissive = setMaterialColor(point.material.emissive, color);
+    point.material.emissiveIntensity = visual.emissiveIntensity;
+    point.material.needsUpdate = true;
     return true;
   }
 

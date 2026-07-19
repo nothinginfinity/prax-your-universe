@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GraphStore } from '../public/js/graph-store.js';
 import {
+  NODE_TYPE_VISUAL_METADATA,
   PraxScene,
   calculateEdgeSegment,
-  calculateProjectionPositions
+  calculateProjectionPositions,
+  getNodeVisualMetadata
 } from '../public/js/scene.js';
 
 class FakeVector3 {
@@ -55,6 +57,12 @@ class FakeColor {
     this.hsl = { h, s, l };
     return this;
   }
+
+  copy(value) {
+    this.value = value.value;
+    this.hsl = value.hsl;
+    return this;
+  }
 }
 
 class FakeBufferGeometry {
@@ -97,8 +105,10 @@ class FakeFloat32BufferAttribute {
 
 class FakeMaterial {
   constructor(options = {}) {
+    Object.assign(this, options);
     this.options = options;
     this.disposed = false;
+    this.needsUpdate = false;
   }
 
   dispose() {
@@ -118,7 +128,14 @@ class FakeObject3D {
 
 class FakeMesh extends FakeObject3D {}
 class FakeLine extends FakeObject3D {}
-class FakeSphereGeometry extends FakeBufferGeometry {}
+class FakeSphereGeometry extends FakeBufferGeometry {
+  constructor(radius, widthSegments, heightSegments) {
+    super();
+    this.radius = radius;
+    this.widthSegments = widthSegments;
+    this.heightSegments = heightSegments;
+  }
+}
 
 class FakeRaycaster {
   setFromCamera() {}
@@ -172,6 +189,35 @@ test('edge segment calculations follow sphere and grid endpoint positions', () =
   assert.deepEqual(grid.slice(3), Object.values(positions.get(edge.toNodeId).grid));
 });
 
+test('node-type visual metadata is stable and distinguishes links, notes, and roots', () => {
+  assert.equal(Object.isFrozen(NODE_TYPE_VISUAL_METADATA), true);
+  assert.notEqual(getNodeVisualMetadata('link').color, getNodeVisualMetadata('note').color);
+  assert.notEqual(getNodeVisualMetadata('link').label, getNodeVisualMetadata('note').label);
+  assert.ok(getNodeVisualMetadata('universe_root').radius > getNodeVisualMetadata('link').radius);
+});
+
+test('scene node objects carry type visual metadata and edits refresh displayed titles without replacing meshes', () => {
+  const store = new GraphStore();
+  const { node: link } = store.addLinkWithDefaultEdge('Link title', 'https://example.com/visual-link');
+  const { node: note } = store.addNoteWithDefaultEdge('Note title', 'Body');
+  const scene = new PraxScene({ style: {} }, () => {}, { three: THREE });
+  scene.camera = { position: new FakeVector3() };
+  scene.addNodes([link, note]);
+  const linkMesh = scene.meshByNodeId.get(link.id);
+  const noteMesh = scene.meshByNodeId.get(note.id);
+  assert.equal(linkMesh.userData.visualKey, 'link');
+  assert.equal(noteMesh.userData.visualKey, 'note');
+  assert.notEqual(linkMesh.material.color.value, noteMesh.material.color.value);
+  assert.equal(linkMesh.geometry.radius, getNodeVisualMetadata('link').radius);
+
+  const edited = store.updateNode(note.id, { title: 'Edited note', body: 'Edited body' });
+  assert.equal(scene.updateNode(edited), true);
+  assert.equal(scene.meshByNodeId.get(note.id), noteMesh);
+  assert.equal(noteMesh.userData.nodeTitle, 'Edited note');
+  assert.equal(noteMesh.userData.visualLabel, 'Note');
+  assert.equal(noteMesh.material.needsUpdate, true);
+});
+
 test('scene edge registry reuses stable edge IDs and synchronizes endpoints across sphere and grid', () => {
   const store = new GraphStore();
   const scene = new PraxScene({ style: {} }, () => {}, { three: THREE });
@@ -212,4 +258,29 @@ test('scene edge removal disposes render resources and supports future deletion'
   assert.equal(scene.edgeObjectById.has(edge.id), false);
   assert.equal(line.geometry.disposed, true);
   assert.equal(line.material.disposed, true);
+});
+
+test('scene node removal disposes the node and every connected rendered edge', () => {
+  const store = new GraphStore();
+  const { node: first } = store.addNoteWithDefaultEdge('First', 'Body');
+  const { node: second } = store.addNoteWithDefaultEdge('Second', 'Body');
+  store.addEdge({ edgeType: 'related_to', fromNodeId: first.id, toNodeId: second.id });
+  const connectedEdges = store.listConnectedEdges(first.id);
+  const scene = new PraxScene({ style: {} }, () => {}, { three: THREE });
+  scene.camera = { position: new FakeVector3() };
+  scene.addNodes(store.listNodes());
+  scene.addEdges(store.listEdges());
+  const point = scene.meshByNodeId.get(first.id);
+  const lines = connectedEdges.map(({ id }) => scene.edgeObjectById.get(id));
+
+  assert.equal(scene.removeNode(first.id), true);
+  assert.equal(scene.meshByNodeId.has(first.id), false);
+  assert.equal(point.geometry.disposed, true);
+  assert.equal(point.material.disposed, true);
+  for (const line of lines) {
+    assert.equal(line.geometry.disposed, true);
+    assert.equal(line.material.disposed, true);
+    assert.equal(scene.edgeObjectById.has(line.userData.edgeId), false);
+  }
+  assert.equal(scene.meshByNodeId.has(second.id), true);
 });

@@ -87,6 +87,37 @@ test('nodes, edges, layouts, layout nodes, roots, and preferences survive reposi
   reader.close();
 });
 
+test('PUX-004 create, edit, and delete operations survive repository reloads without a database migration', async () => {
+  const indexedDB = new FakeIndexedDbFactory();
+  const databaseName = 'prax-pux004-crud-test';
+  const repository = createRepository(indexedDB, databaseName);
+  const store = new GraphStore(await repository.loadOrCreate(createSeedSnapshot()));
+  const { node: link } = store.addLinkWithDefaultEdge('Link', 'https://example.com/pux004');
+  const { node: note } = store.addNoteWithDefaultEdge('Note', 'Original');
+  const editTime = new Date(Date.parse(note.createdAt) + 1000).toISOString();
+  const edited = store.updateNode(note.id, { title: 'Edited note', body: 'Edited body' }, editTime);
+  await repository.saveSnapshot(store.snapshot());
+  repository.close();
+
+  const reader = createRepository(indexedDB, databaseName);
+  const restored = new GraphStore(await reader.loadSnapshot());
+  assert.equal(restored.getNode(link.id).url, 'https://example.com/pux004');
+  assert.equal(restored.getNode(note.id).id, edited.id);
+  assert.equal(restored.getNode(note.id).title, 'Edited note');
+  assert.equal(restored.getNode(note.id).body, 'Edited body');
+  restored.deleteNode(note.id);
+  await reader.saveSnapshot(restored.snapshot());
+  reader.close();
+
+  const finalReader = createRepository(indexedDB, databaseName);
+  const finalStore = new GraphStore(await finalReader.loadSnapshot());
+  assert.equal(finalStore.getNode(note.id), null);
+  assert.equal(finalStore.listEdges().some(({ fromNodeId, toNodeId }) => fromNodeId === note.id || toNodeId === note.id), false);
+  assert.equal(finalStore.getNode(link.id).id, link.id);
+  assert.equal(PRAX_DATABASE_VERSION, 1);
+  finalReader.close();
+});
+
 test('a PUX-002 IndexedDB snapshot upgrades transactionally without data loss', async () => {
   const indexedDB = new FakeIndexedDbFactory();
   const databaseName = 'prax-pux2-upgrade-test';

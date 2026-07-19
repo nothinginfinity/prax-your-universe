@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   GraphValidationError,
   UNIVERSE_ROOT_NODE_TYPE,
+  createLayoutNodeRecord,
   validateGraphSnapshot
 } from '../public/js/graph-schema.js';
 import {
@@ -89,6 +90,15 @@ test('addLink creates one immutable node and one default root edge atomically', 
   }, TypeError);
 });
 
+test('addNote creates a durable note record and one default root edge', () => {
+  const store = new GraphStore();
+  const { node, edge } = store.addNoteWithDefaultEdge('Prax note', 'Captured body');
+  assert.equal(node.nodeType, 'note');
+  assert.equal(node.body, 'Captured body');
+  assert.equal(node.url, null);
+  assert.equal(store.getDefaultRootEdge(node.id).id, edge.id);
+});
+
 test('duplicate default root edges are not created', () => {
   const store = new GraphStore();
   const { node, edge } = store.addLinkWithDefaultEdge('Example', 'https://example.com/duplicate-check');
@@ -138,6 +148,82 @@ test('edges require endpoints in the current universe', () => {
     () => store.addEdge({ edgeType: 'references', fromNodeId: node.id, toNodeId: 'missing:node:123' }),
     (error) => error instanceof GraphValidationError && error.issues[0].code === 'missing_reference'
   );
+});
+
+test('node edits preserve identity, type, creation metadata, provenance, and edges', () => {
+  const store = new GraphStore();
+  const { node, edge } = store.addNoteWithDefaultEdge('Original', 'Original body');
+  const editTime = new Date(Date.parse(node.createdAt) + 1000).toISOString();
+  const edited = store.updateNode(node.id, { title: 'Edited', body: 'Edited body' }, editTime);
+  assert.equal(edited.id, node.id);
+  assert.equal(edited.originId, node.originId);
+  assert.equal(edited.nodeType, node.nodeType);
+  assert.equal(edited.createdAt, node.createdAt);
+  assert.deepEqual(edited.provenance, node.provenance);
+  assert.equal(edited.updatedAt, editTime);
+  assert.equal(edited.title, 'Edited');
+  assert.equal(edited.body, 'Edited body');
+  assert.equal(store.getDefaultRootEdge(node.id).id, edge.id);
+});
+
+test('invalid edits and immutable field changes roll back without mutating the node', () => {
+  const store = new GraphStore();
+  const { node } = store.addNoteWithDefaultEdge('Original', 'Body');
+  const before = store.snapshot();
+  assert.throws(
+    () => store.updateNode(node.id, { url: 'https://example.com/not-allowed' }),
+    (error) => error instanceof GraphValidationError && error.issues[0].code === 'node_type_field'
+  );
+  assert.deepEqual(store.snapshot(), before);
+  assert.throws(
+    () => store.updateNode(node.id, { nodeType: 'link' }),
+    (error) => error instanceof GraphValidationError && error.issues[0].code === 'immutable_field'
+  );
+  assert.deepEqual(store.snapshot(), before);
+});
+
+test('deleting a node removes every connected edge and dependent layout-node record', () => {
+  const store = new GraphStore();
+  const { node: first } = store.addNoteWithDefaultEdge('First', 'Body');
+  const { node: second } = store.addNoteWithDefaultEdge('Second', 'Body');
+  const related = store.addEdge({ edgeType: 'related_to', fromNodeId: first.id, toNodeId: second.id });
+  const layout = store.listLayouts()[0];
+  const layoutNode = createLayoutNodeRecord({
+    universeId: first.universeId,
+    layoutId: layout.id,
+    nodeId: first.id,
+    position: { x: 1, y: 2, z: 3 },
+    provenance: { sourceType: 'user', sourceId: 'delete-test', createdBy: 'test' }
+  });
+  const snapshot = store.snapshot();
+  store.replaceSnapshot({ ...snapshot, layoutNodes: [layoutNode] });
+  const connectedIds = new Set(store.listConnectedEdges(first.id).map(({ id }) => id));
+  assert.equal(connectedIds.has(related.id), true);
+
+  const deleted = store.deleteNode(first.id);
+  assert.equal(deleted.node.id, first.id);
+  assert.deepEqual(new Set(deleted.edges.map(({ id }) => id)), connectedIds);
+  assert.equal(deleted.layoutNodes[0].id, layoutNode.id);
+  assert.equal(store.getNode(first.id), null);
+  assert.equal(store.listEdges().some(({ fromNodeId, toNodeId }) => fromNodeId === first.id || toNodeId === first.id), false);
+  assert.equal(store.listLayoutNodes().some(({ nodeId }) => nodeId === first.id), false);
+  assert.ok(store.getDefaultRootEdge(second.id));
+  assert.doesNotThrow(() => store.snapshot());
+});
+
+test('universe root edit and delete operations are rejected without mutation', () => {
+  const store = new GraphStore();
+  const root = store.getUniverseRoot();
+  const before = store.snapshot();
+  assert.throws(
+    () => store.updateNode(root.id, { title: 'Changed root' }),
+    (error) => error instanceof GraphValidationError && error.issues[0].code === 'managed_root'
+  );
+  assert.throws(
+    () => store.deleteNode(root.id),
+    (error) => error instanceof GraphValidationError && error.issues[0].code === 'managed_root'
+  );
+  assert.deepEqual(store.snapshot(), before);
 });
 
 test('snapshot round trips preserve IDs and relationships', () => {

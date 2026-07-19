@@ -14,6 +14,7 @@ import {
 
 const SEED_TIMESTAMP = '2026-07-19T00:00:00.000Z';
 const PREFERRED_LAYOUT_TYPES = Object.freeze(['sphere', 'grid']);
+const MUTABLE_NODE_FIELDS = Object.freeze(['title', 'body', 'url']);
 const ROOT_PROVENANCE = Object.freeze({
   sourceType: 'system',
   sourceId: 'prax-universe-root-v1',
@@ -24,6 +25,8 @@ const ROOT_EDGE_PROVENANCE = Object.freeze({
   sourceId: 'prax-default-root-edge-v1',
   createdBy: 'prax'
 });
+
+const graphIssue = (message, path, code) => new GraphValidationError(message, [{ path, code, message }]);
 
 export const createUniverseRootRecord = (universe) => createNodeRecord({
   universeId: universe.id,
@@ -202,6 +205,10 @@ export class GraphStore {
     return [...this.edges.values()];
   }
 
+  listConnectedEdges(nodeId) {
+    return this.listEdges().filter(({ fromNodeId, toNodeId }) => fromNodeId === nodeId || toNodeId === nodeId);
+  }
+
   getDefaultRootEdge(nodeId) {
     const node = this.getNode(nodeId);
     if (!node || node.nodeType === UNIVERSE_ROOT_NODE_TYPE) return null;
@@ -238,13 +245,7 @@ export class GraphStore {
 
   updateSettings(values, updatedAt = new Date().toISOString()) {
     const current = this.getSettings();
-    if (!current) {
-      throw new GraphValidationError('The current universe has no settings record.', [{
-        path: 'settings',
-        code: 'missing_reference',
-        message: 'The current universe has no settings record.'
-      }]);
-    }
+    if (!current) throw graphIssue('The current universe has no settings record.', 'settings', 'missing_reference');
     const settings = createSettingsRecord({
       ...current,
       values: { ...current.values, ...values },
@@ -256,11 +257,7 @@ export class GraphStore {
 
   setPreferredLayout(layoutType, updatedAt) {
     if (!PREFERRED_LAYOUT_TYPES.includes(layoutType)) {
-      throw new GraphValidationError('The preferred layout is unsupported.', [{
-        path: 'settings.values.preferredLayout',
-        code: 'enum',
-        message: 'The preferred layout is unsupported.'
-      }]);
+      throw graphIssue('The preferred layout is unsupported.', 'settings.values.preferredLayout', 'enum');
     }
     return this.updateSettings({ preferredLayout: layoutType }, updatedAt);
   }
@@ -268,25 +265,13 @@ export class GraphStore {
   addNode(input) {
     const node = createNodeRecord({ universeId: this.primaryUniverseId, ...input });
     if (!this.universes.has(node.universeId)) {
-      throw new GraphValidationError('Node references a missing universe.', [{
-        path: 'node.universeId',
-        code: 'missing_reference',
-        message: 'Node references a missing universe.'
-      }]);
+      throw graphIssue('Node references a missing universe.', 'node.universeId', 'missing_reference');
     }
     if (this.nodes.has(node.id)) {
-      throw new GraphValidationError(`Node ${node.id} already exists.`, [{
-        path: 'node.id',
-        code: 'duplicate_id',
-        message: `Node ${node.id} already exists.`
-      }]);
+      throw graphIssue(`Node ${node.id} already exists.`, 'node.id', 'duplicate_id');
     }
     if (node.nodeType === UNIVERSE_ROOT_NODE_TYPE) {
-      throw new GraphValidationError('Universe roots are managed by the graph upgrade policy.', [{
-        path: 'node.nodeType',
-        code: 'managed_root',
-        message: 'Universe roots are managed by the graph upgrade policy.'
-      }]);
+      throw graphIssue('Universe roots are managed by the graph upgrade policy.', 'node.nodeType', 'managed_root');
     }
     this.nodes.set(node.id, node);
     return node;
@@ -295,22 +280,12 @@ export class GraphStore {
   ensureDefaultRootEdge(nodeId) {
     const node = this.getNode(nodeId);
     if (!node || node.nodeType === UNIVERSE_ROOT_NODE_TYPE) {
-      throw new GraphValidationError('A default root edge requires a non-root node.', [{
-        path: 'nodeId',
-        code: 'missing_reference',
-        message: 'A default root edge requires a non-root node.'
-      }]);
+      throw graphIssue('A default root edge requires a non-root node.', 'nodeId', 'missing_reference');
     }
     const existing = this.getDefaultRootEdge(node.id);
     if (existing) return existing;
     const root = this.getUniverseRoot(node.universeId);
-    if (!root) {
-      throw new GraphValidationError('The current universe has no root node.', [{
-        path: 'root',
-        code: 'missing_universe_root',
-        message: 'The current universe has no root node.'
-      }]);
-    }
+    if (!root) throw graphIssue('The current universe has no root node.', 'root', 'missing_universe_root');
     return this.addEdge(createDefaultRootEdgeRecord(root, node));
   }
 
@@ -344,33 +319,99 @@ export class GraphStore {
     return this.addLinkWithDefaultEdge(title, url, provenance).node;
   }
 
+  addNoteWithDefaultEdge(title, body, provenance = {}) {
+    return this.addNodeWithDefaultEdge({
+      nodeType: 'note',
+      title,
+      body,
+      provenance: {
+        sourceType: 'user',
+        sourceId: provenance.sourceId ?? 'local-note-form',
+        createdBy: provenance.createdBy ?? 'local-user'
+      }
+    });
+  }
+
+  addNote(title, body, provenance = {}) {
+    return this.addNoteWithDefaultEdge(title, body, provenance).node;
+  }
+
+  updateNode(nodeId, changes = {}, updatedAt = new Date().toISOString()) {
+    const previousSnapshot = this.snapshot();
+    try {
+      const current = this.getNode(nodeId);
+      if (!current) throw graphIssue(`Node ${nodeId} does not exist.`, 'nodeId', 'missing_reference');
+      if (current.nodeType === UNIVERSE_ROOT_NODE_TYPE) {
+        throw graphIssue('Universe roots cannot be edited through node CRUD.', 'node.nodeType', 'managed_root');
+      }
+      if (!changes || typeof changes !== 'object' || Array.isArray(changes)) {
+        throw graphIssue('Node changes must be an object.', 'changes', 'type');
+      }
+      const unsupportedField = Object.keys(changes).find((field) => !MUTABLE_NODE_FIELDS.includes(field));
+      if (unsupportedField) {
+        throw graphIssue(`node.${unsupportedField} is immutable.`, `node.${unsupportedField}`, 'immutable_field');
+      }
+      const updated = createNodeRecord({
+        ...current,
+        ...changes,
+        id: current.id,
+        originId: current.originId,
+        universeId: current.universeId,
+        nodeType: current.nodeType,
+        schemaVersion: current.schemaVersion,
+        createdAt: current.createdAt,
+        updatedAt,
+        provenance: current.provenance
+      });
+      this.nodes.set(updated.id, updated);
+      this.snapshot();
+      return updated;
+    } catch (error) {
+      this.replaceSnapshot(previousSnapshot);
+      throw error;
+    }
+  }
+
+  deleteNode(nodeId) {
+    const previousSnapshot = this.snapshot();
+    try {
+      const node = this.getNode(nodeId);
+      if (!node) throw graphIssue(`Node ${nodeId} does not exist.`, 'nodeId', 'missing_reference');
+      if (node.nodeType === UNIVERSE_ROOT_NODE_TYPE) {
+        throw graphIssue('Universe roots cannot be deleted.', 'node.nodeType', 'managed_root');
+      }
+      const edges = this.listConnectedEdges(nodeId);
+      const layoutNodes = this.listLayoutNodes().filter((record) => record.nodeId === nodeId);
+      edges.forEach(({ id }) => this.edges.delete(id));
+      layoutNodes.forEach(({ id }) => this.layoutNodes.delete(id));
+      this.nodes.delete(nodeId);
+      this.snapshot();
+      return Object.freeze({
+        node,
+        edges: Object.freeze([...edges]),
+        layoutNodes: Object.freeze([...layoutNodes])
+      });
+    } catch (error) {
+      this.replaceSnapshot(previousSnapshot);
+      throw error;
+    }
+  }
+
   addEdge(input) {
     const edge = createEdgeRecord({ universeId: this.primaryUniverseId, ...input });
     const fromNode = this.nodes.get(edge.fromNodeId);
     const toNode = this.nodes.get(edge.toNodeId);
     if (!fromNode || !toNode || fromNode.universeId !== edge.universeId || toNode.universeId !== edge.universeId) {
-      throw new GraphValidationError('Edge endpoints must exist in the same universe.', [{
-        path: 'edge',
-        code: 'missing_reference',
-        message: 'Edge endpoints must exist in the same universe.'
-      }]);
+      throw graphIssue('Edge endpoints must exist in the same universe.', 'edge', 'missing_reference');
     }
     if (this.edges.has(edge.id)) {
-      throw new GraphValidationError(`Edge ${edge.id} already exists.`, [{
-        path: 'edge.id',
-        code: 'duplicate_id',
-        message: `Edge ${edge.id} already exists.`
-      }]);
+      throw graphIssue(`Edge ${edge.id} already exists.`, 'edge.id', 'duplicate_id');
     }
     const root = this.getUniverseRoot(edge.universeId);
     if (root && edge.edgeType === DEFAULT_ROOT_EDGE_TYPE && edge.fromNodeId === root.id) {
       const duplicate = this.getDefaultRootEdge(edge.toNodeId);
       if (duplicate) {
-        throw new GraphValidationError('A default root edge already exists for this node.', [{
-          path: 'edge',
-          code: 'duplicate_root_edge',
-          message: 'A default root edge already exists for this node.'
-        }]);
+        throw graphIssue('A default root edge already exists for this node.', 'edge', 'duplicate_root_edge');
       }
     }
     this.edges.set(edge.id, edge);
