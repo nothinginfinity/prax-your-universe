@@ -128,7 +128,7 @@ try {
   state = await readState();
   const reloaded = state.nodes.find((node) => node.id === created.id);
   assert.ok(reloaded, 'new link must survive a production reload');
-  assert.equal(reloaded.url, `${url}/`, 'reloaded link URL must remain canonical');
+  assert.equal(reloaded.url, url, 'reloaded link URL must remain canonical');
   validateTopology(state, 'desktop after reload');
 
   await page.setViewportSize({ width: 390, height: 844 });
