@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Prax - Your Universe</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        body { margin: 0; font-family: 'Inter', sans-serif; background-color: #000; color: #fff; overflow: hidden; }
+        canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
+        .ui-element { position: absolute; z-index: 100; transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+        .btn {
+            background: rgba(30, 30, 35, 0.8); border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); color: #fff;
+            padding: 0.75rem 1.5rem; border-radius: 0.75rem; font-weight: 600; cursor: pointer;
+            pointer-events: all; transition: all 0.2s; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+        .btn:hover:not(:disabled) { background: rgba(50, 50, 55, 0.9); transform: translateY(-2px); }
+        .btn.active { background: #00A3FF; color: #000; }
+
+        #info-panel {
+            top: 20px; right: 20px; background: rgba(20, 20, 25, 0.85); border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px; width: 340px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            transform: translateX(120%); overflow: hidden;
+        }
+        #info-panel.visible { transform: translateX(0); }
+        .info-content { padding: 20px; }
+        #info-title { font-size: 1.25rem; font-weight: 700; margin-top: 1rem; line-height: 1.2; word-wrap: break-word; }
+        #info-details { font-size: 0.9rem; color: #ccc; line-height: 1.5; margin-top: 0.75rem; word-wrap: break-word; }
+        #info-link { display: block; width: 100%; margin-top: 1rem; text-align: center; background-color: #0077B6; }
+
+        #modal-backdrop {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7); backdrop-filter: blur(10px);
+            z-index: 200; display: flex; justify-content: center; align-items: center;
+            opacity: 0; pointer-events: none; transition: opacity 0.3s;
+        }
+        #modal-backdrop.visible { opacity: 1; pointer-events: all; }
+        .modal-container {
+            background: rgba(30, 30, 35, 0.9); border-radius: 1rem; padding: 2rem;
+            width: 90%; max-width: 500px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .modal-input {
+            width: 100%; background: #111; border: 1px solid #444; color: #fff;
+            padding: 1rem; border-radius: 0.5rem; font-size: 1rem; margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- UI Controls -->
+    <div class="ui-element flex space-x-4" style="top: 20px; left: 20px;">
+        <button id="view-toggle-btn" class="btn">View: Sphere</button>
+    </div>
+    <div class="ui-element" style="bottom: 20px; left: 50%; transform: translateX(-50%);">
+        <button id="add-btn" class="btn text-xl px-6 py-4 rounded-full bg-blue-600 hover:bg-blue-500">+</button>
+    </div>
+
+    <!-- Info Panel -->
+    <div id="info-panel" class="ui-element">
+        <div class="info-content">
+            <h2 id="info-title"></h2>
+            <p id="info-details"></p>
+            <a id="info-link" href="#" target="_blank" rel="noopener noreferrer" class="btn">Visit Link</a>
+        </div>
+    </div>
+    
+    <!-- Add Link Modal -->
+    <div id="modal-backdrop" class="ui-element">
+        <div id="add-link-modal" class="modal-container">
+            <h2 class="text-2xl font-bold mb-4">Add a new Link</h2>
+            <input id="link-title-input" type="text" class="modal-input" placeholder="Title (e.g., 'My Portfolio')">
+            <input id="link-url-input" type="url" class="modal-input" placeholder="URL (e.g., 'https://example.com')">
+            <div class="flex gap-4">
+                <button id="submit-link-btn" class="btn flex-grow bg-blue-600">Add Link</button>
+                <button class="btn flex-grow bg-gray-600 modal-cancel-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="main-canvas"></canvas>
+
+    <script type="module">
+        let scene, camera, renderer, controls;
+        let pointsData = [];
+        let pointsGroup = new THREE.Group();
+        let currentView = 'sphere';
+        let isTransitioning = false;
+        let INTERSECTED;
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        // --- CORE APPLICATION LOGIC ---
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('main-canvas'), antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            dirLight.position.set(10, 20, 15);
+            scene.add(dirLight);
+
+            const starGeometry = new THREE.BufferGeometry();
+            const starVertices = [];
+            for (let i = 0; i < 20000; i++) starVertices.push((Math.random() - 0.5) * 800, (Math.random() - 0.5) * 800, (Math.random() - 0.5) * 800);
+            starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+            const starMaterial = new THREE.PointsMaterial({ color: 0xaaaaaa, size: 0.4, transparent: true, opacity: 0.7 });
+            scene.add(new THREE.Points(starGeometry, starMaterial));
+
+            scene.add(pointsGroup);
+            camera.position.set(0, 0, 35);
+
+            setupEventListeners();
+            loadInitialData();
+            animate();
+        }
+
+        function loadInitialData() {
+            const initialLinks = [
+                { type: 'link', title: 'Welcome to Prax!', url: '#' },
+                { type: 'link', title: 'Add your first link', url: '#' },
+                { type: 'link', title: 'Toggle View', url: '#' },
+            ];
+            updateUniverse(initialLinks);
+        }
+
+        // --- DATA & 3D OBJECT MANAGEMENT ---
+        function createPointObject(data) {
+            // Upgraded from BoxGeometry to SphereGeometry for a cosmic look
+            const geometry = new THREE.SphereGeometry(0.4, 16, 16);
+            const color = new THREE.Color().setHSL(Math.random(), 0.8, 0.6);
+            const material = new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.2 });
+            const point = new THREE.Mesh(geometry, material);
+            point.userData = data;
+            return point;
+        }
+
+        function updateUniverse(newNodes) {
+            newNodes.forEach((node, i) => {
+                node.id = pointsData.length + i;
+                pointsData.push(node);
+                const pointObject = createPointObject(node);
+                pointObject.scale.set(0.01, 0.01, 0.01);
+                pointsGroup.add(pointObject);
+            });
+            reorganizeUniverse(true);
+        }
+
+        function reorganizeUniverse(isInitial = false) {
+            const totalPoints = pointsGroup.children.length;
+            if (totalPoints === 0) return;
+
+            const baseSphereRadius = 8 * Math.cbrt(totalPoints / 2);
+            const phi = Math.PI * (3 - Math.sqrt(5)); 
+            const gridSize = Math.ceil(Math.sqrt(totalPoints));
+            const gridSpacing = 2.5;
+
+            pointsGroup.children.forEach((point, i) => {
+                const y = 1 - (i / (totalPoints - 1)) * 2;
+                const radiusAtY = Math.sqrt(1 - y * y);
+                const theta = phi * i;
+                point.userData.spherePosition = new THREE.Vector3(
+                    Math.cos(theta) * radiusAtY * baseSphereRadius,
+                    y * baseSphereRadius,
+                    Math.sin(theta) * radiusAtY * baseSphereRadius
+                );
+
+                const gridX = (i % gridSize - (gridSize - 1) / 2) * gridSpacing;
+                const gridY = (Math.floor(i / gridSize) - (Math.ceil(totalPoints / gridSize) -1) / 2) * gridSpacing;
+                point.userData.gridPosition = new THREE.Vector3(gridX, gridY, -10);
+
+                const targetPosition = currentView === 'sphere' ? point.userData.spherePosition : point.userData.gridPosition;
+                
+                if (isInitial) {
+                    point.position.copy(targetPosition);
+                    point.scale.set(1, 1, 1);
+                } else {
+                    animateProperty(point.position, targetPosition, 1200);
+                    animateProperty(point.scale, new THREE.Vector3(1, 1, 1), 1000);
+                }
+            });
+            
+            const cameraTargetZ = currentView === 'sphere' ? baseSphereRadius * 2.2 : 25;
+            animateProperty(camera.position, new THREE.Vector3(0, 0, cameraTargetZ), 1200);
+        }
+        
+        function animateImmersion() {
+            const distance = camera.position.length();
+            let immersionFactor = 1.0;
+            
+            const baseRadius = 8 * Math.cbrt(pointsGroup.children.length / 2);
+            if (distance < baseRadius) {
+                immersionFactor = THREE.MathUtils.smoothstep(distance, 0, baseRadius);
+                immersionFactor = 1.0 - Math.pow(immersionFactor, 0.5);
+            }
+
+            pointsGroup.children.forEach(point => {
+                 if (currentView === 'sphere') {
+                    point.position.copy(point.userData.spherePosition).multiplyScalar(immersionFactor);
+                 }
+            });
+        }
+
+        // --- UI & EVENT LISTENERS ---
+        function setupEventListeners() {
+            window.addEventListener('resize', onWindowResize);
+            renderer.domElement.addEventListener('mousemove', onMouseMove);
+            renderer.domElement.addEventListener('click', onClick);
+
+            document.getElementById('view-toggle-btn').addEventListener('click', toggleView);
+            
+            document.getElementById('add-btn').addEventListener('click', () => {
+                document.getElementById('modal-backdrop').classList.add('visible');
+            });
+            document.querySelectorAll('.modal-cancel-btn').forEach(btn => btn.addEventListener('click', () => {
+                 document.getElementById('modal-backdrop').classList.remove('visible');
+            }));
+            document.getElementById('submit-link-btn').addEventListener('click', () => {
+                const title = document.getElementById('link-title-input').value.trim();
+                const url = document.getElementById('link-url-input').value.trim();
+                if (title && url) {
+                    updateUniverse([{ type: 'link', title, url }]);
+                    document.getElementById('link-title-input').value = '';
+                    document.getElementById('link-url-input').value = '';
+                    document.getElementById('modal-backdrop').classList.remove('visible');
+                } else {
+                    alert('Please fill out both title and URL.');
+                }
+            });
+        }
+        
+        function toggleView() {
+            if (isTransitioning) return;
+            isTransitioning = true;
+            
+            currentView = (currentView === 'sphere') ? 'grid' : 'sphere';
+            document.getElementById('view-toggle-btn').textContent = `View: ${currentView.charAt(0).toUpperCase() + currentView.slice(1)}`;
+            
+            reorganizeUniverse(false);
+
+            setTimeout(() => { isTransitioning = false; }, 1300);
+        }
+
+        function showInfoPanel(data) {
+            const panel = document.getElementById('info-panel');
+            panel.classList.add('visible');
+            document.getElementById('info-title').textContent = data.title;
+            const link = document.getElementById('info-link');
+            if (data.type === 'link') {
+                document.getElementById('info-details').textContent = data.url;
+                link.href = data.url;
+                link.style.display = 'block';
+            } else {
+                document.getElementById('info-details').textContent = `Type: ${data.type}`;
+                link.style.display = 'none';
+            }
+        }
+        function hideInfoPanel() { document.getElementById('info-panel').classList.remove('visible'); }
+
+        // --- ANIMATION & INTERACTION ---
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        function onMouseMove(e) { mouse.x = (e.clientX / window.innerWidth) * 2 - 1; mouse.y = -(e.clientY / window.innerHeight) * 2 + 1; }
+        
+        function onClick() {
+            if (INTERSECTED) {
+                showInfoPanel(INTERSECTED.object.userData);
+            } else {
+                hideInfoPanel();
+            }
+        }
+
+        function checkIntersection() {
+            if (isTransitioning) return;
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(pointsGroup.children);
+            if (intersects.length > 0) {
+                if (INTERSECTED !== intersects[0]) {
+                    if (INTERSECTED) {
+                        INTERSECTED.object.scale.set(1, 1, 1);
+                        INTERSECTED.object.material.emissiveIntensity = 0.2;
+                    }
+                    INTERSECTED = intersects[0];
+                    INTERSECTED.object.scale.set(1.5, 1.5, 1.5);
+                    INTERSECTED.object.material.emissiveIntensity = 0.6;
+                    renderer.domElement.style.cursor = 'pointer';
+                }
+            } else {
+                if (INTERSECTED) {
+                    INTERSECTED.object.scale.set(1, 1, 1);
+                    INTERSECTED.object.material.emissiveIntensity = 0.2;
+                }
+                INTERSECTED = null;
+                renderer.domElement.style.cursor = 'default';
+            }
+        }
+        
+        function animateProperty(start, end, duration) {
+            const startTime = Date.now();
+            const startValue = start.clone();
+            function animate() {
+                let t = Math.min(1, (Date.now() - startTime) / duration);
+                t = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+                start.lerpVectors(startValue, end, t);
+                if (t < 1) requestAnimationFrame(animate);
+            }
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            checkIntersection();
+            
+            // Added logic to rotate the universe naturally in sphere view
+            if (currentView === 'sphere' && !isTransitioning) {
+                animateImmersion();
+                pointsGroup.rotation.y += 0.001; 
+            } else {
+                // Smoothly resets rotation back to 0 when moving to grid view
+                pointsGroup.rotation.y = THREE.MathUtils.lerp(pointsGroup.rotation.y, 0, 0.05);
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html>
