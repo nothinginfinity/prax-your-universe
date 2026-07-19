@@ -34,12 +34,14 @@ Application startup follows this order:
 1. Create the deterministic seed snapshot in memory.
 2. Open IndexedDB and run any required database migrations.
 3. Read every canonical graph collection in one read-only transaction.
-4. Validate the reconstructed snapshot with `validateGraphSnapshot()`.
+4. Validate the reconstructed snapshot with backward-compatible `validateGraphSnapshot()` rules.
 5. Use the stored graph when one exists.
-6. Otherwise atomically write and return the deterministic seed graph.
-7. Construct `GraphStore` from the validated snapshot.
-8. Restore the preferred sphere or grid projection.
-9. Populate the Three.js scene.
+6. Otherwise atomically write and return the deterministic PUX-003 seed graph.
+7. Normalize the graph by creating or reusing one deterministic universe root and any missing default root `contains` edges.
+8. Strictly validate and transactionally persist the upgraded graph when normalization changed it.
+9. Construct `GraphStore` from the upgraded snapshot.
+10. Restore the preferred sphere or grid projection.
+11. Populate the Three.js scene from canonical nodes and edges.
 
 The scene never reads IndexedDB directly.
 
@@ -77,7 +79,7 @@ IndexedDB migrations are versioned in `indexeddb-repository.js`.
 - An upgrade blocked by another open tab returns `upgrade_blocked`.
 - A version-change event closes the current database connection so another tab can upgrade safely.
 
-Graph-record schema migrations are separate from IndexedDB structure migrations. PUX-002 validates schema version 1. Broader graph-data migration fixtures remain in PUX-006.
+Graph-record migrations are separate from IndexedDB structure migrations. PUX-003 keeps IndexedDB at version 1 because the existing stores already support root nodes and edges. Its application-level normalization upgrades valid PUX-002 snapshots transactionally without changing object-store structure or discarding existing records.
 
 ## Failure and recovery behavior
 
@@ -100,8 +102,8 @@ PUX-002 does not add:
 - cloud synchronization;
 - authentication;
 - public mutation APIs;
-- root-node edge creation;
-- visible edge rendering;
+- semantic or suggested edge generation;
+- force-directed graph layout;
 - node edit or delete UI;
 - JSON import or export.
 
