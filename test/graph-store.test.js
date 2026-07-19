@@ -63,3 +63,21 @@ test('replaceSnapshot validates before mutating store state', () => {
   );
   assert.deepEqual(store.listNodes().map(({ id }) => id), before);
 });
+
+test('preferred layout is stored in the canonical settings record', () => {
+  const store = new GraphStore();
+  const original = store.getSettings();
+  const updated = store.setPreferredLayout('grid', '2026-07-19T02:00:00.000Z');
+  assert.equal(store.getPreferredLayout(), 'grid');
+  assert.equal(updated.id, original.id);
+  assert.equal(updated.createdAt, original.createdAt);
+  assert.equal(updated.updatedAt, '2026-07-19T02:00:00.000Z');
+  assert.equal(Object.isFrozen(updated.values), true);
+});
+
+test('unsupported preferred layouts fail without mutating settings', () => {
+  const store = new GraphStore();
+  const before = store.getSettings();
+  assert.throws(() => store.setPreferredLayout('galaxy'), GraphValidationError);
+  assert.equal(store.getSettings(), before);
+});
