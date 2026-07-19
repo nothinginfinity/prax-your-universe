@@ -1,9 +1,17 @@
+const hueFromId = (id) => {
+  let hash = 0;
+  for (const character of id) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
+  return Math.abs(hash % 360) / 360;
+};
+
 export class PraxScene {
   constructor(canvas, onSelect) {
     this.canvas = canvas;
     this.onSelect = onSelect;
     this.currentView = 'sphere';
     this.pointsGroup = new THREE.Group();
+    this.meshByNodeId = new Map();
+    this.projectionPositions = new Map();
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2(2, 2);
     this.intersected = null;
@@ -39,28 +47,61 @@ export class PraxScene {
 
   addNodes(nodes) {
     for (const node of nodes) {
-      const color = new THREE.Color().setHSL(Math.random(), 0.8, 0.6);
-      const point = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 16), new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.2 }));
-      point.userData = { ...node };
+      if (this.meshByNodeId.has(node.id)) {
+        this.updateNode(node);
+        continue;
+      }
+      const color = new THREE.Color().setHSL(hueFromId(node.id), 0.8, 0.6);
+      const point = new THREE.Mesh(
+        new THREE.SphereGeometry(0.4, 16, 16),
+        new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.2 })
+      );
+      point.userData = { nodeId: node.id, nodeType: node.nodeType };
+      this.meshByNodeId.set(node.id, point);
       this.pointsGroup.add(point);
     }
     this.layout();
   }
 
+  updateNode(node) {
+    const point = this.meshByNodeId.get(node.id);
+    if (!point) return false;
+    point.userData.nodeType = node.nodeType;
+    return true;
+  }
+
+  removeNode(nodeId) {
+    const point = this.meshByNodeId.get(nodeId);
+    if (!point) return false;
+    if (this.intersected === point) this.intersected = null;
+    this.pointsGroup.remove(point);
+    point.geometry.dispose();
+    point.material.dispose();
+    this.meshByNodeId.delete(nodeId);
+    this.projectionPositions.delete(nodeId);
+    this.layout();
+    return true;
+  }
+
   layout() {
-    const count = this.pointsGroup.children.length;
+    const points = this.pointsGroup.children;
+    const count = points.length;
     if (!count) return;
     const radius = 8 * Math.cbrt(Math.max(count, 2) / 2);
     const phi = Math.PI * (3 - Math.sqrt(5));
     const gridSize = Math.ceil(Math.sqrt(count));
-    this.pointsGroup.children.forEach((point, index) => {
+    points.forEach((point, index) => {
       const y = count === 1 ? 0 : 1 - (index / (count - 1)) * 2;
       const theta = phi * index;
       const ring = Math.sqrt(Math.max(0, 1 - y * y));
       const sphere = new THREE.Vector3(Math.cos(theta) * ring * radius, y * radius, Math.sin(theta) * ring * radius);
-      const grid = new THREE.Vector3((index % gridSize - (gridSize - 1) / 2) * 2.5, (Math.floor(index / gridSize) - (Math.ceil(count / gridSize) - 1) / 2) * 2.5, -10);
-      point.userData.positions = { sphere, grid };
-      point.position.copy(point.userData.positions[this.currentView]);
+      const grid = new THREE.Vector3(
+        (index % gridSize - (gridSize - 1) / 2) * 2.5,
+        (Math.floor(index / gridSize) - (Math.ceil(count / gridSize) - 1) / 2) * 2.5,
+        -10
+      );
+      this.projectionPositions.set(point.userData.nodeId, { sphere, grid });
+      point.position.copy(this.projectionPositions.get(point.userData.nodeId)[this.currentView]);
     });
     this.camera.position.set(0, 0, this.currentView === 'sphere' ? radius * 2.2 : 25);
   }
@@ -78,7 +119,7 @@ export class PraxScene {
   }
 
   select() {
-    this.onSelect(this.intersected?.userData ?? null);
+    this.onSelect(this.intersected?.userData.nodeId ?? null);
   }
 
   updateIntersection() {

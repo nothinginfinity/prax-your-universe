@@ -1,4 +1,5 @@
 import { readHealth } from './api-client.js';
+import { GraphValidationError } from './graph-schema.js';
 import { GraphStore } from './graph-store.js';
 import { PraxScene } from './scene.js';
 
@@ -12,14 +13,21 @@ const showNode = (node) => {
   infoPanel.classList.toggle('visible', Boolean(node));
   if (!node) return;
   document.querySelector('#info-title').textContent = node.title;
-  document.querySelector('#info-details').textContent = node.url ?? node.type;
+  document.querySelector('#info-details').textContent = node.url ?? node.nodeType;
   const link = document.querySelector('#info-link');
-  const visitable = node.type === 'link' && node.url && node.url !== '#';
+  const visitable = node.nodeType === 'link' && Boolean(node.url);
   link.hidden = !visitable;
   if (visitable) link.href = node.url;
 };
 
-const scene = new PraxScene(document.querySelector('#main-canvas'), showNode);
+const showValidationError = (error) => {
+  const firstIssue = error instanceof GraphValidationError ? error.issues[0]?.message : null;
+  alert(firstIssue ?? error.message ?? 'The node could not be added.');
+};
+
+const scene = new PraxScene(document.querySelector('#main-canvas'), (nodeId) => {
+  showNode(nodeId ? store.getNode(nodeId) : null);
+});
 scene.init();
 scene.addNodes(store.listNodes());
 
@@ -32,23 +40,15 @@ document.querySelector('#add-btn').addEventListener('click', () => modal.classLi
 document.querySelectorAll('.modal-cancel-btn').forEach((button) => button.addEventListener('click', () => modal.classList.remove('visible')));
 
 document.querySelector('#submit-link-btn').addEventListener('click', () => {
-  const title = titleInput.value.trim();
-  let url;
   try {
-    url = new URL(urlInput.value.trim());
-    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Unsupported protocol');
-  } catch {
-    alert('Enter a valid http or https URL.');
-    return;
+    const node = store.addLink(titleInput.value, urlInput.value);
+    scene.addNodes([node]);
+    titleInput.value = '';
+    urlInput.value = '';
+    modal.classList.remove('visible');
+  } catch (error) {
+    showValidationError(error);
   }
-  if (!title) {
-    alert('Enter a title.');
-    return;
-  }
-  scene.addNodes([store.addLink(title, url.href)]);
-  titleInput.value = '';
-  urlInput.value = '';
-  modal.classList.remove('visible');
 });
 
 readHealth()
