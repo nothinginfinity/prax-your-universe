@@ -90,7 +90,13 @@ const createNodeFromUi = async ({ nodeType, title, url = '', body = '' }) => {
   if (nodeType === 'link') await page.fill('#node-url-input', url);
   if (nodeType === 'note') await page.fill('#node-body-input', body);
   await page.click('#submit-node-btn');
-  await page.waitForFunction((expectedTitle) => globalThis.__PRAX_TEST__?.getState().nodes.some(({ title }) => title === expectedTitle), title, { timeout: 15000 });
+  await page.waitForFunction((expectedTitle) => {
+    const state = globalThis.__PRAX_TEST__?.getState();
+    const node = state?.nodes.find(({ title }) => title === expectedTitle);
+    return Boolean(node)
+      && state.renderedNodes.some(({ nodeId }) => nodeId === node.id)
+      && state.renderedEdges.length === state.edges.length;
+  }, title, { timeout: 15000 });
   return (await readState()).nodes.find((node) => node.title === title);
 };
 
@@ -136,8 +142,12 @@ try {
   await page.fill('#node-body-input', 'Edited PUX-004 note body.');
   await page.click('#submit-node-btn');
   await page.waitForFunction((nodeId) => {
-    const node = globalThis.__PRAX_TEST__?.getState().nodes.find(({ id }) => id === nodeId);
-    return node?.title === 'PUX-004 Edited Note' && node?.body === 'Edited PUX-004 note body.';
+    const state = globalThis.__PRAX_TEST__?.getState();
+    const node = state?.nodes.find(({ id }) => id === nodeId);
+    const rendered = state?.renderedNodes.find(({ nodeId: renderedId }) => renderedId === nodeId);
+    return node?.title === 'PUX-004 Edited Note'
+      && node?.body === 'Edited PUX-004 note body.'
+      && rendered?.title === 'PUX-004 Edited Note';
   }, note.id, { timeout: 15000 });
   state = await readState();
   const edited = state.nodes.find(({ id }) => id === note.id);
