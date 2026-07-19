@@ -1,6 +1,6 @@
 # Prax Local Persistence
 
-**Release:** PUX-002  
+**Release:** PUX-002 through PUX-005  
 **Database:** `prax-your-universe`  
 **IndexedDB version:** `1`  
 **Graph schema version:** `1`
@@ -63,6 +63,16 @@ During a transaction:
 
 The application also keeps a pre-mutation `GraphStore` snapshot. A failed persistence operation restores that snapshot and does not project the failed change into the scene.
 
+## PUX-005 import and export
+
+Export serializes the complete validated version-1 graph into a `prax-json` bundle. The bundle includes universes, the canonical root, nodes, edges, layouts, layout-node records, settings, record metadata, stable IDs, and provenance. Renderer-only camera, hover, selection, modal, and temporary projection state are excluded.
+
+Import is replace-only. The browser reads and validates the complete file before showing a destructive-operation confirmation. Files are limited to 10 MiB and must contain exactly one universe. Malformed JSON, unsupported versions, duplicate identities, invalid endpoints, invalid root topology, unknown structural fields, and unsafe metadata are rejected before `GraphStore` or IndexedDB mutation.
+
+A valid raw graph-schema-version-1 snapshot is accepted as a legacy shape. Application-level normalization may add a deterministic missing universe root and default root `contains` edges. This compatibility path does not require an IndexedDB version change.
+
+Replacement keeps the previous snapshot until the candidate is strictly validated, persisted in one complete IndexedDB transaction, and projected into the scene. Persistence failure restores the previous store while the previous IndexedDB commit remains intact. Projection failure triggers restoration and re-persistence of the previous snapshot before the prior scene is restored.
+
 ## Preferences
 
 The currently selected sphere or grid view is stored in the canonical settings record as `preferredLayout`. It is restored before nodes are laid out during startup.
@@ -92,11 +102,11 @@ When a later transaction fails:
 - the scene is not updated with the failed mutation;
 - the user receives a save-failure message.
 
-Recovery for a blocked database upgrade is to close other Prax tabs and reload. Destructive reset and JSON import/export workflows are intentionally deferred to PUX-005 and PUX-006.
+Recovery for a blocked database upgrade is to close other Prax tabs and reload. PUX-005 import/export uses the same version-1 database stores and application-level validation; no database migration is required.
 
-## Scope boundary
+## Current scope boundary
 
-PUX-002 does not add:
+The local graph through PUX-005 does not add:
 
 - D1, KV, Vectorize, R2, or Workers AI;
 - cloud synchronization;
@@ -104,7 +114,6 @@ PUX-002 does not add:
 - public mutation APIs;
 - semantic or suggested edge generation;
 - force-directed graph layout;
-- node edit or delete UI;
-- JSON import or export.
+- merge import behavior.
 
 Those remain separate roadmap work packages.
