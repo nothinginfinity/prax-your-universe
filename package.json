@@ -1,13 +1,13 @@
 {
   "name": "prax-your-universe",
-  "version": "0.2.0-pux.2",
+  "version": "0.2.0-pux.3",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "test": "node --test",
-    "check:js": "node --check public/js/graph-schema.js && node --check public/js/graph-store.js && node --check public/js/indexeddb-repository.js && node --check public/js/scene.js && node --check public/js/app.js && node --check src/worker.js",
+    "check:js": "node --check public/js/graph-schema.js && node --check public/js/graph-store.js && node --check public/js/graph-mutations.js && node --check public/js/indexeddb-repository.js && node --check public/js/scene.js && node --check public/js/app.js && node --check src/worker.js",
     "check": "npm run check:js && wrangler deploy --dry-run",
     "validate": "npm test && npm run check"
   },

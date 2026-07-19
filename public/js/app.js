@@ -1,6 +1,7 @@
 import { readHealth } from './api-client.js';
+import { commitGraphMutation } from './graph-mutations.js';
 import { GraphValidationError } from './graph-schema.js';
-import { GraphStore, createSeedSnapshot } from './graph-store.js';
+import { GraphStore, createSeedSnapshot, upgradeGraphSnapshot } from './graph-store.js';
 import { IndexedDbRepositoryError, PraxIndexedDbRepository } from './indexeddb-repository.js';
 import { PraxScene } from './scene.js';
 
@@ -22,17 +23,20 @@ const renderStatus = () => {
 
 const initializeStore = async () => {
   const seedSnapshot = createSeedSnapshot();
+  let loadedSnapshot = seedSnapshot;
   try {
     repository = new PraxIndexedDbRepository();
-    const snapshot = await repository.loadOrCreate(seedSnapshot);
+    loadedSnapshot = await repository.loadOrCreate(seedSnapshot);
+    const upgrade = upgradeGraphSnapshot(loadedSnapshot);
+    if (upgrade.changed) await repository.saveSnapshot(upgrade.snapshot);
     persistenceLabel = 'Local saved';
-    return new GraphStore(snapshot);
+    return new GraphStore(upgrade.snapshot);
   } catch (error) {
     console.error('Prax local persistence is unavailable.', error);
     repository?.close();
     repository = null;
     persistenceLabel = 'Memory only';
-    return new GraphStore(seedSnapshot);
+    return new GraphStore(loadedSnapshot);
   } finally {
     renderStatus();
   }
@@ -59,25 +63,12 @@ const showMutationError = (error) => {
   alert(firstIssue ?? persistenceMessage ?? error.message ?? 'The graph could not be updated.');
 };
 
-const commitMutation = async (mutate, project) => {
-  const previousSnapshot = store.snapshot();
-  try {
-    const result = mutate();
-    if (repository) await repository.saveSnapshot(store.snapshot());
-    project?.(result);
-    return result;
-  } catch (error) {
-    store.replaceSnapshot(previousSnapshot);
-    throw error;
-  }
-};
-
 const scene = new PraxScene(document.querySelector('#main-canvas'), (nodeId) => {
   showNode(nodeId ? store.getNode(nodeId) : null);
 });
 scene.init();
 scene.setView(store.getPreferredLayout());
-scene.addNodes(store.listNodes());
+scene.replaceGraph(store.listNodes(), store.listEdges());
 
 const updateViewButton = () => {
   const view = scene.getView();
@@ -89,10 +80,12 @@ viewToggleButton.addEventListener('click', async () => {
   const nextView = scene.getView() === 'sphere' ? 'grid' : 'sphere';
   viewToggleButton.disabled = true;
   try {
-    await commitMutation(
-      () => store.setPreferredLayout(nextView),
-      () => scene.setView(nextView)
-    );
+    await commitGraphMutation({
+      store,
+      repository,
+      mutate: () => store.setPreferredLayout(nextView),
+      project: () => scene.setView(nextView)
+    });
     updateViewButton();
   } catch (error) {
     showMutationError(error);
@@ -107,10 +100,15 @@ document.querySelectorAll('.modal-cancel-btn').forEach((button) => button.addEve
 submitLinkButton.addEventListener('click', async () => {
   submitLinkButton.disabled = true;
   try {
-    await commitMutation(
-      () => store.addLink(titleInput.value, urlInput.value),
-      (node) => scene.addNodes([node])
-    );
+    await commitGraphMutation({
+      store,
+      repository,
+      mutate: () => store.addLinkWithDefaultEdge(titleInput.value, urlInput.value),
+      project: ({ node, edge }) => {
+        scene.addNodes([node]);
+        scene.addEdges([edge]);
+      }
+    });
     titleInput.value = '';
     urlInput.value = '';
     modal.classList.remove('visible');

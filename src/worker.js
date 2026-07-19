@@ -1,9 +1,7 @@
-const json = (data, init = {}) => {
-  const headers = new Headers(init.headers);
-  headers.set('content-type', 'application/json; charset=utf-8');
-  headers.set('cache-control', 'no-store');
-  return new Response(JSON.stringify(data), { ...init, headers });
-};
+const json = (value, init = {}) => new Response(JSON.stringify(value, null, 2), {
+  ...init,
+  headers: { 'content-type': 'application/json; charset=utf-8', ...(init.headers ?? {}) }
+});
 
 export default {
   async fetch(request, env) {
@@ -13,14 +11,11 @@ export default {
       return json({
         ok: true,
         app: 'prax-your-universe',
-        version: '0.2.0-pux.2',
+        version: '0.2.0-pux.3',
+        graph_schema_version: 1,
         canonical_store: 'indexeddb-local',
         semantic_index: 'not-configured'
       });
-    }
-
-    if (url.pathname.startsWith('/api/')) {
-      return json({ ok: false, error: 'API route not implemented' }, { status: 404 });
     }
 
     return env.ASSETS.fetch(request);
