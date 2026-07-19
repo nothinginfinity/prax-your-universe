@@ -1,16 +1,92 @@
 import {
+  DEFAULT_ROOT_EDGE_TYPE,
   GraphValidationError,
   PRAX_SCHEMA_VERSION,
+  UNIVERSE_ROOT_NODE_TYPE,
   createEdgeRecord,
   createLayoutRecord,
   createNodeRecord,
   createSettingsRecord,
   createUniverseRecord,
+  createUniverseRootOriginId,
   validateGraphSnapshot
 } from './graph-schema.js';
 
 const SEED_TIMESTAMP = '2026-07-19T00:00:00.000Z';
 const PREFERRED_LAYOUT_TYPES = Object.freeze(['sphere', 'grid']);
+const ROOT_PROVENANCE = Object.freeze({
+  sourceType: 'system',
+  sourceId: 'prax-universe-root-v1',
+  createdBy: 'prax'
+});
+const ROOT_EDGE_PROVENANCE = Object.freeze({
+  sourceType: 'system',
+  sourceId: 'prax-default-root-edge-v1',
+  createdBy: 'prax'
+});
+
+export const createUniverseRootRecord = (universe) => createNodeRecord({
+  universeId: universe.id,
+  originId: createUniverseRootOriginId(universe.id),
+  nodeType: UNIVERSE_ROOT_NODE_TYPE,
+  title: universe.name,
+  body: 'Canonical root for this universe.',
+  createdAt: universe.createdAt,
+  updatedAt: universe.updatedAt,
+  provenance: ROOT_PROVENANCE
+});
+
+export const createDefaultRootEdgeRecord = (root, node) => createEdgeRecord({
+  universeId: node.universeId,
+  edgeType: DEFAULT_ROOT_EDGE_TYPE,
+  fromNodeId: root.id,
+  toNodeId: node.id,
+  createdAt: node.createdAt,
+  updatedAt: node.updatedAt,
+  provenance: ROOT_EDGE_PROVENANCE
+});
+
+export const upgradeGraphSnapshot = (snapshot) => {
+  const normalized = validateGraphSnapshot(snapshot);
+  const nodes = [...normalized.nodes];
+  const edges = [...normalized.edges];
+  let changed = false;
+
+  for (const universe of normalized.universes) {
+    let root = nodes.find((node) => (
+      node.universeId === universe.id
+      && node.nodeType === UNIVERSE_ROOT_NODE_TYPE
+    ));
+
+    if (!root) {
+      root = createUniverseRootRecord(universe);
+      nodes.push(root);
+      changed = true;
+    }
+
+    for (const node of nodes) {
+      if (node.universeId !== universe.id || node.nodeType === UNIVERSE_ROOT_NODE_TYPE) continue;
+      const existing = edges.find((edge) => (
+        edge.universeId === universe.id
+        && edge.edgeType === DEFAULT_ROOT_EDGE_TYPE
+        && edge.fromNodeId === root.id
+        && edge.toNodeId === node.id
+      ));
+      if (existing) continue;
+      edges.push(createDefaultRootEdgeRecord(root, node));
+      changed = true;
+    }
+  }
+
+  return Object.freeze({
+    changed,
+    snapshot: validateGraphSnapshot({
+      ...normalized,
+      nodes,
+      edges
+    }, { requireUniverseRoots: true })
+  });
+};
 
 export const createSeedSnapshot = () => {
   const provenance = { sourceType: 'system', sourceId: 'prax-seed-v1', createdBy: 'prax' };
@@ -52,7 +128,7 @@ export const createSeedSnapshot = () => {
     updatedAt: SEED_TIMESTAMP,
     provenance
   })];
-  return validateGraphSnapshot({
+  return upgradeGraphSnapshot({
     schemaVersion: PRAX_SCHEMA_VERSION,
     universes: [universe],
     nodes,
@@ -60,7 +136,7 @@ export const createSeedSnapshot = () => {
     layouts,
     layoutNodes: [],
     settings
-  });
+  }).snapshot;
 };
 
 const mapById = (records) => new Map(records.map((record) => [record.id, record]));
@@ -71,7 +147,7 @@ export class GraphStore {
   }
 
   replaceSnapshot(snapshot) {
-    const normalized = validateGraphSnapshot(snapshot);
+    const normalized = upgradeGraphSnapshot(snapshot).snapshot;
     this.schemaVersion = normalized.schemaVersion;
     this.universes = mapById(normalized.universes);
     this.nodes = mapById(normalized.nodes);
@@ -92,7 +168,7 @@ export class GraphStore {
       layouts: this.listLayouts(),
       layoutNodes: this.listLayoutNodes(),
       settings: this.listSettings()
-    });
+    }, { requireUniverseRoots: true });
   }
 
   getUniverse(id = this.primaryUniverseId) {
@@ -111,12 +187,31 @@ export class GraphStore {
     return [...this.nodes.values()];
   }
 
+  getUniverseRoot(universeId = this.primaryUniverseId) {
+    return this.listNodes().find((node) => (
+      node.universeId === universeId
+      && node.nodeType === UNIVERSE_ROOT_NODE_TYPE
+    )) ?? null;
+  }
+
   getEdge(id) {
     return this.edges.get(id) ?? null;
   }
 
   listEdges() {
     return [...this.edges.values()];
+  }
+
+  getDefaultRootEdge(nodeId) {
+    const node = this.getNode(nodeId);
+    if (!node || node.nodeType === UNIVERSE_ROOT_NODE_TYPE) return null;
+    const root = this.getUniverseRoot(node.universeId);
+    if (!root) return null;
+    return this.listEdges().find((edge) => (
+      edge.edgeType === DEFAULT_ROOT_EDGE_TYPE
+      && edge.fromNodeId === root.id
+      && edge.toNodeId === node.id
+    )) ?? null;
   }
 
   listLayouts() {
@@ -186,12 +281,54 @@ export class GraphStore {
         message: `Node ${node.id} already exists.`
       }]);
     }
+    if (node.nodeType === UNIVERSE_ROOT_NODE_TYPE) {
+      throw new GraphValidationError('Universe roots are managed by the graph upgrade policy.', [{
+        path: 'node.nodeType',
+        code: 'managed_root',
+        message: 'Universe roots are managed by the graph upgrade policy.'
+      }]);
+    }
     this.nodes.set(node.id, node);
     return node;
   }
 
-  addLink(title, url, provenance = {}) {
-    return this.addNode({
+  ensureDefaultRootEdge(nodeId) {
+    const node = this.getNode(nodeId);
+    if (!node || node.nodeType === UNIVERSE_ROOT_NODE_TYPE) {
+      throw new GraphValidationError('A default root edge requires a non-root node.', [{
+        path: 'nodeId',
+        code: 'missing_reference',
+        message: 'A default root edge requires a non-root node.'
+      }]);
+    }
+    const existing = this.getDefaultRootEdge(node.id);
+    if (existing) return existing;
+    const root = this.getUniverseRoot(node.universeId);
+    if (!root) {
+      throw new GraphValidationError('The current universe has no root node.', [{
+        path: 'root',
+        code: 'missing_universe_root',
+        message: 'The current universe has no root node.'
+      }]);
+    }
+    return this.addEdge(createDefaultRootEdgeRecord(root, node));
+  }
+
+  addNodeWithDefaultEdge(input) {
+    const previousSnapshot = this.snapshot();
+    try {
+      const node = this.addNode(input);
+      const edge = this.ensureDefaultRootEdge(node.id);
+      this.snapshot();
+      return Object.freeze({ node, edge });
+    } catch (error) {
+      this.replaceSnapshot(previousSnapshot);
+      throw error;
+    }
+  }
+
+  addLinkWithDefaultEdge(title, url, provenance = {}) {
+    return this.addNodeWithDefaultEdge({
       nodeType: 'link',
       title,
       url,
@@ -201,6 +338,10 @@ export class GraphStore {
         createdBy: provenance.createdBy ?? 'local-user'
       }
     });
+  }
+
+  addLink(title, url, provenance = {}) {
+    return this.addLinkWithDefaultEdge(title, url, provenance).node;
   }
 
   addEdge(input) {
@@ -220,6 +361,17 @@ export class GraphStore {
         code: 'duplicate_id',
         message: `Edge ${edge.id} already exists.`
       }]);
+    }
+    const root = this.getUniverseRoot(edge.universeId);
+    if (root && edge.edgeType === DEFAULT_ROOT_EDGE_TYPE && edge.fromNodeId === root.id) {
+      const duplicate = this.getDefaultRootEdge(edge.toNodeId);
+      if (duplicate) {
+        throw new GraphValidationError('A default root edge already exists for this node.', [{
+          path: 'edge',
+          code: 'duplicate_root_edge',
+          message: 'A default root edge already exists for this node.'
+        }]);
+      }
     }
     this.edges.set(edge.id, edge);
     return edge;

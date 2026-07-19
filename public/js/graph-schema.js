@@ -2,6 +2,7 @@ export const PRAX_SCHEMA_VERSION = 1;
 
 export const NODE_TYPES = Object.freeze([
   'universe',
+  'universe_root',
   'link',
   'note',
   'project',
@@ -19,6 +20,8 @@ export const EDGE_TYPES = Object.freeze([
 
 export const LAYOUT_TYPES = Object.freeze(['sphere', 'grid', 'custom']);
 export const PROVENANCE_SOURCE_TYPES = Object.freeze(['system', 'user', 'import']);
+export const UNIVERSE_ROOT_NODE_TYPE = 'universe_root';
+export const DEFAULT_ROOT_EDGE_TYPE = 'contains';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/;
 const FNV_OFFSET = 0xcbf29ce484222325n;
@@ -95,6 +98,18 @@ export const createDeterministicId = (prefix, ...parts) => {
   const normalizedPrefix = requireString(prefix, 'prefix', { maxLength: 24 }).toLowerCase().replace(/[^a-z0-9_]/g, '_');
   const material = parts.map((part) => String(part)).join('\u001f');
   return `${normalizedPrefix}_${fnv1a64(material)}${fnv1a64(material, FNV_OFFSET ^ SECOND_SEED)}`;
+};
+
+export const createUniverseRootOriginId = (universeId) => `universe-root:${validateId(universeId, 'universeId')}`;
+
+export const createUniverseRootId = (universeId) => {
+  const normalizedUniverseId = validateId(universeId, 'universeId');
+  return createDeterministicId(
+    'node',
+    normalizedUniverseId,
+    UNIVERSE_ROOT_NODE_TYPE,
+    createUniverseRootOriginId(normalizedUniverseId)
+  );
 };
 
 export const createOriginId = () => {
@@ -308,7 +323,89 @@ const assertUnique = (records, path) => {
   }
 };
 
-export const validateGraphSnapshot = (input = {}) => {
+const validateUniverseRootTopology = (normalized, { requireUniverseRoots = false } = {}) => {
+  const rootsByUniverse = new Map(normalized.universes.map(({ id }) => [id, []]));
+  const nodeById = new Map(normalized.nodes.map((node) => [node.id, node]));
+
+  normalized.nodes.forEach((node, index) => {
+    if (node.nodeType !== UNIVERSE_ROOT_NODE_TYPE) return;
+    const expectedId = createUniverseRootId(node.universeId);
+    if (node.id !== expectedId) {
+      fail(
+        'Universe root nodes must use the deterministic root identity.',
+        `snapshot.nodes[${index}].id`,
+        'root_identity'
+      );
+    }
+    rootsByUniverse.get(node.universeId)?.push(node);
+  });
+
+  for (const universe of normalized.universes) {
+    const roots = rootsByUniverse.get(universe.id) ?? [];
+    if (roots.length > 1) {
+      fail(
+        `Universe ${universe.id} has more than one root node.`,
+        'snapshot.nodes',
+        'duplicate_universe_root'
+      );
+    }
+    if (requireUniverseRoots && roots.length !== 1) {
+      fail(
+        `Universe ${universe.id} requires exactly one root node.`,
+        'snapshot.nodes',
+        'missing_universe_root'
+      );
+    }
+  }
+
+  const rootIds = new Set([...rootsByUniverse.values()].flat().map(({ id }) => id));
+  const rootEdgeCountByNode = new Map();
+
+  normalized.edges.forEach((edge, index) => {
+    const fromRoot = rootIds.has(edge.fromNodeId);
+    const toRoot = rootIds.has(edge.toNodeId);
+    if (!fromRoot && !toRoot) return;
+    if (
+      edge.edgeType !== DEFAULT_ROOT_EDGE_TYPE
+      || !fromRoot
+      || toRoot
+      || nodeById.get(edge.toNodeId)?.nodeType === UNIVERSE_ROOT_NODE_TYPE
+    ) {
+      fail(
+        'Universe roots may only originate contains edges to non-root nodes.',
+        `snapshot.edges[${index}]`,
+        'invalid_root_edge'
+      );
+    }
+    const key = `${edge.fromNodeId}\u001f${edge.toNodeId}`;
+    const count = (rootEdgeCountByNode.get(key) ?? 0) + 1;
+    rootEdgeCountByNode.set(key, count);
+    if (count > 1) {
+      fail(
+        'A node may have only one default edge from its universe root.',
+        `snapshot.edges[${index}]`,
+        'duplicate_root_edge'
+      );
+    }
+  });
+
+  if (!requireUniverseRoots) return;
+
+  normalized.nodes.forEach((node, index) => {
+    if (node.nodeType === UNIVERSE_ROOT_NODE_TYPE) return;
+    const root = (rootsByUniverse.get(node.universeId) ?? [])[0];
+    const key = `${root.id}\u001f${node.id}`;
+    if (rootEdgeCountByNode.get(key) !== 1) {
+      fail(
+        'Every non-root node requires one contains edge from its universe root.',
+        `snapshot.nodes[${index}]`,
+        'missing_root_edge'
+      );
+    }
+  });
+};
+
+export const validateGraphSnapshot = (input = {}, options = {}) => {
   requireObject(input, 'snapshot');
   const collections = {
     universes: input.universes ?? [],
@@ -348,6 +445,11 @@ export const validateGraphSnapshot = (input = {}) => {
     if (!nodeIds.has(record.fromNodeId) || !nodeIds.has(record.toNodeId)) {
       fail('Edge endpoints must exist in the snapshot.', `snapshot.edges[${index}]`, 'missing_reference');
     }
+    const fromNode = normalized.nodes.find(({ id }) => id === record.fromNodeId);
+    const toNode = normalized.nodes.find(({ id }) => id === record.toNodeId);
+    if (fromNode?.universeId !== record.universeId || toNode?.universeId !== record.universeId) {
+      fail('Edge endpoints must belong to the edge universe.', `snapshot.edges[${index}]`, 'cross_universe_edge');
+    }
   });
   normalized.layouts.forEach((record, index) => assertUniverse(record, `snapshot.layouts[${index}]`));
   normalized.layoutNodes.forEach((record, index) => {
@@ -358,5 +460,6 @@ export const validateGraphSnapshot = (input = {}) => {
   });
   normalized.settings.forEach((record, index) => assertUniverse(record, `snapshot.settings[${index}]`));
 
+  validateUniverseRootTopology(normalized, options);
   return deepFreeze(normalized);
 };

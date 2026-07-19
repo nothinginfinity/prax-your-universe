@@ -186,7 +186,7 @@ export class PraxIndexedDbRepository {
   }
 
   async saveSnapshot(snapshot) {
-    const normalized = validateGraphSnapshot(snapshot);
+    const normalized = validateGraphSnapshot(snapshot, { requireUniverseRoots: true });
     const database = await this.open();
     let transaction;
     try {
@@ -212,7 +212,6 @@ export class PraxIndexedDbRepository {
       try {
         transaction?.abort();
       } catch {
-        // The transaction may already be committed or aborted.
       }
       throw repositoryError('save', error, 'save_failed');
     }
