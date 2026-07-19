@@ -170,6 +170,18 @@ try {
     `browser failures: ${JSON.stringify(failures, null, 2)}`,
     `state: ${JSON.stringify(state, null, 2)}`
   ].join('\n\n'));
+  const summary = [
+    `checkpoint=${checkpoint}`,
+    `error=${error.message}`,
+    `view=${state?.currentView ?? 'unavailable'}`,
+    `worker=${state?.workerLabel ?? 'unavailable'}`,
+    `persistence=${state?.persistenceLabel ?? 'unavailable'}`,
+    `roots=${state?.roots?.length ?? 'unavailable'}`,
+    `edges=${state?.edges?.length ?? 'unavailable'}`,
+    `renderedEdges=${state?.renderedEdges?.length ?? 'unavailable'}`,
+    `browserFailures=${failures.length}`
+  ].join(' | ').replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+  console.error(`::error title=PUX-003 live verification::${summary}`);
   throw error;
 } finally {
   await context.close();
