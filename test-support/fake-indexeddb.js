@@ -264,6 +264,22 @@ export class FakeIndexedDbFactory {
     this.nextWriteFailure = error;
   }
 
+  seedRecords(name, recordsByStore) {
+    const state = this.databases.get(name);
+    if (!state) throw new Error(`Database ${name} has not been initialized.`);
+    for (const [storeName, records] of Object.entries(recordsByStore)) {
+      const definition = state.definitions.get(storeName);
+      if (!definition) throw new Error(`Missing object store: ${storeName}`);
+      const values = new Map();
+      for (const record of records) {
+        const key = record?.[definition.keyPath];
+        if (key === undefined || key === null) throw new Error(`Missing keyPath ${definition.keyPath}.`);
+        values.set(key, clone(record));
+      }
+      state.data.set(storeName, values);
+    }
+  }
+
   inspect(name) {
     const state = this.databases.get(name);
     if (!state) return null;

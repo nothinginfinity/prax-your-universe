@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GraphValidationError } from '../public/js/graph-schema.js';
-import { GraphStore, createSeedSnapshot } from '../public/js/graph-store.js';
+import { GraphValidationError, UNIVERSE_ROOT_NODE_TYPE, validateGraphSnapshot } from '../public/js/graph-schema.js';
+import { GraphStore, createSeedSnapshot, upgradeGraphSnapshot } from '../public/js/graph-store.js';
 import {
   GRAPH_OBJECT_STORES,
   IndexedDbRepositoryError,
@@ -11,6 +11,34 @@ import {
 import { FakeIndexedDbFactory } from '../test-support/fake-indexeddb.js';
 
 const createRepository = (indexedDB, databaseName) => new PraxIndexedDbRepository({ indexedDB, databaseName });
+
+const asPux2Snapshot = (snapshot = createSeedSnapshot()) => {
+  const rootIds = new Set(snapshot.nodes
+    .filter(({ nodeType }) => nodeType === UNIVERSE_ROOT_NODE_TYPE)
+    .map(({ id }) => id));
+  return validateGraphSnapshot({
+    ...snapshot,
+    nodes: snapshot.nodes.filter(({ id }) => !rootIds.has(id)),
+    edges: snapshot.edges.filter(({ fromNodeId, toNodeId }) => !rootIds.has(fromNodeId) && !rootIds.has(toNodeId))
+  });
+};
+
+const seedLegacySnapshot = (indexedDB, databaseName, snapshot) => {
+  indexedDB.seedRecords(databaseName, {
+    [GRAPH_OBJECT_STORES.universes]: snapshot.universes,
+    [GRAPH_OBJECT_STORES.nodes]: snapshot.nodes,
+    [GRAPH_OBJECT_STORES.edges]: snapshot.edges,
+    [GRAPH_OBJECT_STORES.layouts]: snapshot.layouts,
+    [GRAPH_OBJECT_STORES.layoutNodes]: snapshot.layoutNodes,
+    [GRAPH_OBJECT_STORES.settings]: snapshot.settings,
+    meta: [{
+      key: 'graph',
+      schemaVersion: snapshot.schemaVersion,
+      databaseVersion: PRAX_DATABASE_VERSION,
+      savedAt: '2026-07-19T02:00:00.000Z'
+    }]
+  });
+};
 
 test('database initialization creates the versioned normalized object stores', async () => {
   const indexedDB = new FakeIndexedDbFactory();
@@ -36,12 +64,12 @@ test('loadOrCreate seeds an empty database and hydrates it across repository ins
   second.close();
 });
 
-test('nodes, edges, layouts, layout nodes, and preferences survive repository reloads', async () => {
+test('nodes, edges, layouts, layout nodes, roots, and preferences survive repository reloads', async () => {
   const indexedDB = new FakeIndexedDbFactory();
   const databaseName = 'prax-roundtrip-test';
   const store = new GraphStore();
-  const first = store.addNode({ originId: 'persisted-1', nodeType: 'note', title: 'Persisted note' });
-  const second = store.addNode({ originId: 'persisted-2', nodeType: 'project', title: 'Persisted project' });
+  const { node: first } = store.addNodeWithDefaultEdge({ originId: 'persisted-1', nodeType: 'note', title: 'Persisted note' });
+  const { node: second } = store.addNodeWithDefaultEdge({ originId: 'persisted-2', nodeType: 'project', title: 'Persisted project' });
   store.addEdge({ edgeType: 'related_to', fromNodeId: first.id, toNodeId: second.id });
   store.setPreferredLayout('grid', '2026-07-19T02:05:00.000Z');
 
@@ -52,9 +80,39 @@ test('nodes, edges, layouts, layout nodes, and preferences survive repository re
   const reader = createRepository(indexedDB, databaseName);
   const restored = new GraphStore(await reader.loadSnapshot());
   assert.equal(restored.getNode(first.id).title, 'Persisted note');
-  assert.equal(restored.listEdges().length, 1);
+  assert.equal(restored.getUniverseRoot().nodeType, UNIVERSE_ROOT_NODE_TYPE);
+  assert.equal(restored.getDefaultRootEdge(first.id).edgeType, 'contains');
   assert.equal(restored.listLayouts().length, 2);
   assert.equal(restored.getPreferredLayout(), 'grid');
+  reader.close();
+});
+
+test('a PUX-002 IndexedDB snapshot upgrades transactionally without data loss', async () => {
+  const indexedDB = new FakeIndexedDbFactory();
+  const databaseName = 'prax-pux2-upgrade-test';
+  const repository = createRepository(indexedDB, databaseName);
+  await repository.open();
+
+  const legacyStore = new GraphStore();
+  const { node: userLink } = legacyStore.addLinkWithDefaultEdge('Historical link', 'https://example.com/historical');
+  legacyStore.setPreferredLayout('grid', '2026-07-19T02:10:00.000Z');
+  const pux2 = asPux2Snapshot(legacyStore.snapshot());
+  seedLegacySnapshot(indexedDB, databaseName, pux2);
+
+  const loaded = await repository.loadSnapshot();
+  assert.equal(loaded.nodes.some(({ nodeType }) => nodeType === UNIVERSE_ROOT_NODE_TYPE), false);
+  const upgraded = upgradeGraphSnapshot(loaded);
+  await repository.saveSnapshot(upgraded.snapshot);
+  repository.close();
+
+  const reader = createRepository(indexedDB, databaseName);
+  const restored = new GraphStore(await reader.loadSnapshot());
+  assert.equal(restored.getNode(userLink.id).url, userLink.url);
+  assert.equal(restored.getNode(userLink.id).provenance.sourceId, userLink.provenance.sourceId);
+  assert.equal(restored.getPreferredLayout(), 'grid');
+  assert.equal(restored.listLayouts().length, pux2.layouts.length);
+  assert.equal(restored.getDefaultRootEdge(userLink.id).edgeType, 'contains');
+  assert.equal(restored.listNodes().filter(({ nodeType }) => nodeType === UNIVERSE_ROOT_NODE_TYPE).length, 1);
   reader.close();
 });
 

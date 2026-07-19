@@ -1,19 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  DEFAULT_ROOT_EDGE_TYPE,
   EDGE_TYPES,
   GraphValidationError,
   NODE_TYPES,
   PRAX_SCHEMA_VERSION,
+  UNIVERSE_ROOT_NODE_TYPE,
   createEdgeRecord,
   createLayoutNodeRecord,
   createNodeRecord,
   createUniverseRecord,
+  createUniverseRootId,
+  createUniverseRootOriginId,
   validateGraphSnapshot
 } from '../public/js/graph-schema.js';
 
 const NOW = '2026-07-19T01:30:00.000Z';
 const provenance = { sourceType: 'user', sourceId: 'test', createdBy: 'test-runner' };
+const systemProvenance = { sourceType: 'system', sourceId: 'test-root', createdBy: 'prax' };
 const universe = createUniverseRecord({ originId: 'test-universe', name: 'Test', provenance }, { now: NOW });
 
 const nodeInput = (overrides = {}) => ({
@@ -26,9 +31,20 @@ const nodeInput = (overrides = {}) => ({
   ...overrides
 });
 
-test('schema exports the planned initial node and edge types', () => {
-  assert.deepEqual(NODE_TYPES, ['universe', 'link', 'note', 'project', 'document', 'conversation']);
+const createRoot = (overrides = {}) => createNodeRecord({
+  universeId: universe.id,
+  originId: createUniverseRootOriginId(universe.id),
+  nodeType: UNIVERSE_ROOT_NODE_TYPE,
+  title: universe.name,
+  body: 'Canonical root for this universe.',
+  provenance: systemProvenance,
+  ...overrides
+}, { now: NOW });
+
+test('schema exports the planned node and edge types including a dedicated universe root', () => {
+  assert.deepEqual(NODE_TYPES, ['universe', 'universe_root', 'link', 'note', 'project', 'document', 'conversation']);
   assert.deepEqual(EDGE_TYPES, ['contains', 'references', 'belongs_to', 'related_to', 'created_from']);
+  assert.equal(DEFAULT_ROOT_EDGE_TYPE, 'contains');
   assert.equal(PRAX_SCHEMA_VERSION, 1);
 });
 
@@ -37,6 +53,13 @@ test('node identity is stable when mutable content changes', () => {
   const edited = createNodeRecord(nodeInput({ title: 'Edited title', body: 'Edited body' }), { now: NOW });
   assert.equal(first.id, edited.id);
   assert.notEqual(first.title, edited.title);
+});
+
+test('universe root identity is deterministic for the universe', () => {
+  const first = createRoot();
+  const second = createRoot({ title: 'Renamed display title' });
+  assert.equal(first.id, createUniverseRootId(universe.id));
+  assert.equal(second.id, first.id);
 });
 
 test('valid imported IDs are preserved', () => {
@@ -105,4 +128,93 @@ test('snapshot validation rejects edges with missing endpoints', () => {
     }),
     (error) => error instanceof GraphValidationError && error.issues[0].code === 'missing_reference'
   );
+});
+
+test('graph validation rejects non-deterministic universe roots', () => {
+  const root = createRoot({ id: 'node:wrong-root-id' });
+  assert.throws(
+    () => validateGraphSnapshot({
+      schemaVersion: 1,
+      universes: [universe],
+      nodes: [root],
+      edges: [],
+      layouts: [],
+      layoutNodes: [],
+      settings: []
+    }),
+    (error) => error instanceof GraphValidationError && error.issues[0].code === 'root_identity'
+  );
+});
+
+test('graph validation rejects duplicate roots and invalid root edge directions', () => {
+  const root = createRoot();
+  const duplicateRoot = createRoot({ id: root.id.replace(/.$/, '0') });
+  assert.throws(
+    () => validateGraphSnapshot({
+      schemaVersion: 1,
+      universes: [universe],
+      nodes: [root, duplicateRoot],
+      edges: [],
+      layouts: [],
+      layoutNodes: [],
+      settings: []
+    }),
+    GraphValidationError
+  );
+
+  const node = createNodeRecord(nodeInput(), { now: NOW });
+  const invalidEdge = createEdgeRecord({
+    universeId: universe.id,
+    edgeType: 'references',
+    fromNodeId: root.id,
+    toNodeId: node.id,
+    provenance
+  }, { now: NOW });
+  assert.throws(
+    () => validateGraphSnapshot({
+      schemaVersion: 1,
+      universes: [universe],
+      nodes: [root, node],
+      edges: [invalidEdge],
+      layouts: [],
+      layoutNodes: [],
+      settings: []
+    }),
+    (error) => error instanceof GraphValidationError && error.issues[0].code === 'invalid_root_edge'
+  );
+});
+
+test('strict graph validation requires one root contains edge for every non-root node', () => {
+  const root = createRoot();
+  const node = createNodeRecord(nodeInput(), { now: NOW });
+  assert.throws(
+    () => validateGraphSnapshot({
+      schemaVersion: 1,
+      universes: [universe],
+      nodes: [root, node],
+      edges: [],
+      layouts: [],
+      layoutNodes: [],
+      settings: []
+    }, { requireUniverseRoots: true }),
+    (error) => error instanceof GraphValidationError && error.issues[0].code === 'missing_root_edge'
+  );
+
+  const edge = createEdgeRecord({
+    universeId: universe.id,
+    edgeType: 'contains',
+    fromNodeId: root.id,
+    toNodeId: node.id,
+    provenance: systemProvenance
+  }, { now: NOW });
+  const valid = validateGraphSnapshot({
+    schemaVersion: 1,
+    universes: [universe],
+    nodes: [root, node],
+    edges: [edge],
+    layouts: [],
+    layoutNodes: [],
+    settings: []
+  }, { requireUniverseRoots: true });
+  assert.equal(valid.edges[0].edgeType, 'contains');
 });
