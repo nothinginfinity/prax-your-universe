@@ -29,8 +29,17 @@ page.on('response', (response) => {
 const readState = () => page.evaluate(() => globalThis.__PRAX_TEST__.getState());
 
 const waitForPrax = async () => {
-  await page.waitForFunction(() => Boolean(globalThis.__PRAX_TEST__?.getState), null, { timeout: 15000 });
-  await page.waitForTimeout(1500);
+  await page.waitForFunction(() => {
+    const getState = globalThis.__PRAX_TEST__?.getState;
+    if (!getState) return false;
+    const state = getState();
+    return state.persistenceLabel === 'Local saved'
+      && state.workerLabel !== 'Worker checking'
+      && state.roots.length === 1
+      && state.edges.length > 0
+      && state.renderedEdges.length === state.edges.length;
+  }, null, { timeout: 30000 });
+  await page.waitForTimeout(500);
 };
 
 const almostEqual = (left, right, epsilon = 1e-5) => Math.abs(left - right) <= epsilon;
