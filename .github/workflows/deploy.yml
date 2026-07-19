@@ -41,3 +41,25 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  live-verify:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm install --no-save --package-lock=false playwright@1.55.0
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/verify-pux003-live.mjs
+        env:
+          PRAX_LIVE_URL: https://prax-your-universe.jaredtechfit.workers.dev
+          PRAX_VISUAL_ARTIFACT_DIR: artifacts/pux003-live
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pux003-live-browser-evidence
+          path: artifacts/pux003-live
+          if-no-files-found: warn

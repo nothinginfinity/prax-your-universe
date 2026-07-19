@@ -1,6 +1,6 @@
 import { readHealth } from './api-client.js';
 import { commitGraphMutation } from './graph-mutations.js';
-import { GraphValidationError } from './graph-schema.js';
+import { GraphValidationError, UNIVERSE_ROOT_NODE_TYPE } from './graph-schema.js';
 import { GraphStore, createSeedSnapshot, upgradeGraphSnapshot } from './graph-store.js';
 import { IndexedDbRepositoryError, PraxIndexedDbRepository } from './indexeddb-repository.js';
 import { PraxScene } from './scene.js';
@@ -69,6 +69,58 @@ const scene = new PraxScene(document.querySelector('#main-canvas'), (nodeId) => 
 scene.init();
 scene.setView(store.getPreferredLayout());
 scene.replaceGraph(store.listNodes(), store.listEdges());
+
+const getPuxVerificationState = () => {
+  const snapshot = store.snapshot();
+  return {
+    workerLabel,
+    persistenceLabel,
+    currentView: scene.getView(),
+    viewport: {
+      width: innerWidth,
+      height: innerHeight,
+      scrollWidth: document.documentElement.scrollWidth,
+      scrollHeight: document.documentElement.scrollHeight
+    },
+    roots: snapshot.nodes
+      .filter(({ nodeType }) => nodeType === UNIVERSE_ROOT_NODE_TYPE)
+      .map(({ id, universeId }) => ({ id, universeId })),
+    nodes: snapshot.nodes.map(({ id, universeId, nodeType, title, url }) => ({
+      id,
+      universeId,
+      nodeType,
+      title,
+      url
+    })),
+    edges: snapshot.edges.map(({ id, universeId, edgeType, fromNodeId, toNodeId }) => ({
+      id,
+      universeId,
+      edgeType,
+      fromNodeId,
+      toNodeId
+    })),
+    nodePositions: [...scene.meshByNodeId].map(([nodeId, mesh]) => ({
+      nodeId,
+      position: [mesh.position.x, mesh.position.y, mesh.position.z]
+    })),
+    renderedEdges: [...scene.edgeObjectById].map(([edgeId, line]) => ({
+      edgeId,
+      edgeClass: line.userData.edgeClass,
+      fromNodeId: line.userData.fromNodeId,
+      toNodeId: line.userData.toNodeId,
+      segment: [...line.geometry.getAttribute('position').array]
+    }))
+  };
+};
+
+if (new URLSearchParams(location.search).get('puxTest') === '003') {
+  Object.defineProperty(globalThis, '__PRAX_TEST__', {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: Object.freeze({ getState: getPuxVerificationState })
+  });
+}
 
 const updateViewButton = () => {
   const view = scene.getView();
