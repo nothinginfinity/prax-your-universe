@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#000000">
+  <title>Prax — Your Universe</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="ui-element flex space-x-4 controls-top">
+    <button id="view-toggle-btn" class="btn">View: Sphere</button>
+    <span id="status-pill" class="status-pill">Local graph</span>
+  </div>
+
+  <div class="ui-element add-control">
+    <button id="add-btn" class="btn add-btn" aria-label="Add node">+</button>
+  </div>
+
+  <aside id="info-panel" class="ui-element" aria-live="polite">
+    <div class="info-content">
+      <h2 id="info-title"></h2>
+      <p id="info-details"></p>
+      <a id="info-link" href="#" target="_blank" rel="noopener noreferrer" class="btn">Visit Link</a>
+    </div>
+  </aside>
+
+  <div id="modal-backdrop" class="ui-element" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-container">
+      <h2 id="modal-title" class="text-2xl font-bold mb-4">Add a new link</h2>
+      <input id="link-title-input" type="text" class="modal-input" placeholder="Title">
+      <input id="link-url-input" type="url" class="modal-input" placeholder="https://example.com">
+      <div class="flex gap-4">
+        <button id="submit-link-btn" class="btn flex-grow bg-blue-600">Add Link</button>
+        <button class="btn flex-grow bg-gray-600 modal-cancel-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="main-canvas"></canvas>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+body {
+  margin: 0;
+  font-family: Inter, sans-serif;
+  background: #000;
+  color: #fff;
+  overflow: hidden;
+}
+
+canvas {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.ui-element {
+  position: absolute;
+  z-index: 100;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.controls-top { top: 20px; left: 20px; align-items: center; }
+.add-control { bottom: 20px; left: 50%; transform: translateX(-50%); }
+
+.btn {
+  background: rgba(30, 30, 35, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  pointer-events: all;
+  transition: all 0.2s;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.btn:hover { background: rgba(50, 50, 55, 0.9); transform: translateY(-2px); }
+.add-btn { font-size: 1.5rem; padding: 1rem 1.5rem; border-radius: 999px; background: #2563eb; }
+.status-pill { padding: 0.55rem 0.8rem; border-radius: 999px; background: rgba(20, 20, 25, 0.8); color: #9ca3af; font-size: 0.75rem; }
+
+#info-panel {
+  top: 20px;
+  right: 20px;
+  width: min(340px, calc(100vw - 40px));
+  background: rgba(20, 20, 25, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  backdrop-filter: blur(12px);
+  transform: translateX(120%);
+  overflow: hidden;
+}
+
+#info-panel.visible { transform: translateX(0); }
+.info-content { padding: 20px; }
+#info-title { font-size: 1.25rem; font-weight: 700; margin-top: 1rem; overflow-wrap: anywhere; }
+#info-details { font-size: 0.9rem; color: #ccc; line-height: 1.5; margin-top: 0.75rem; overflow-wrap: anywhere; }
+#info-link { display: block; margin-top: 1rem; text-align: center; background: #0077b6; }
+
+#modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px);
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#modal-backdrop.visible { opacity: 1; pointer-events: all; }
+.modal-container { background: rgba(30, 30, 35, 0.95); border-radius: 1rem; padding: 2rem; width: 90%; max-width: 500px; }
+.modal-input { width: 100%; background: #111; border: 1px solid #444; color: #fff; padding: 1rem; border-radius: 0.5rem; font-size: 1rem; margin-bottom: 1rem; }
+
+@media (max-width: 640px) {
+  .controls-top { top: 12px; left: 12px; }
+  #info-panel { top: auto; right: 12px; bottom: 84px; width: calc(100vw - 24px); transform: translateY(140%); }
+  #info-panel.visible { transform: translateY(0); }
+}
