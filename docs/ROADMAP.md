@@ -384,21 +384,21 @@ A user can:
 
 The next active release is **v0.2.0 — Local Graph Core**.
 
-### Work package PUX-001 — Client graph schema
+### Work package PUX-001 — Client graph schema — complete
 
 - Define versioned node, edge, layout, and settings records.
 - Define deterministic ID rules.
 - Define typed-edge validation.
 - Add graph-store unit boundaries.
 
-### Work package PUX-002 — IndexedDB repository
+### Work package PUX-002 — IndexedDB repository — complete
 
 - Add database initialization and upgrade handling.
 - Persist nodes, edges, layouts, and preferences.
 - Hydrate the graph store during application startup.
 - Add transaction and error handling.
 
-### Work package PUX-003 — Root node and edges
+### Work package PUX-003 — Root node and edges — active
 
 - Create one stable universe root node.
 - Connect newly created nodes through explicit default edges.
