@@ -2,7 +2,7 @@
 
 Prax is a lightweight Three.js prototype for navigating personal information as a spatial universe rather than a linear sidebar or chronological list.
 
-The current build renders link nodes in a rotatable 3D sphere, supports a grid projection, allows links to be added in-session, and exposes node details through an information panel.
+The current build provides a durable local spatial graph with one protected universe root, typed edges, link and note CRUD, IndexedDB persistence, sphere and grid projections, and validated JSON import/export.
 
 ## Product direction
 
@@ -10,15 +10,18 @@ The larger goal is a **Spatial Knowledge Graph**: a navigable 3D representation 
 
 Instead of treating chat history as an endless timeline, Prax treats each meaningful unit as a node and each real relationship as an edge. Semantic similarity can influence visual proximity, but the graph remains explicit and inspectable.
 
-## Current prototype
+## Current local graph
 
-- Three.js scene with orbit controls
-- Procedural starfield
-- Sphere and grid projections
-- Clickable, emissive link nodes
-- Slide-in information panel
-- In-session link creation
-- Responsive full-screen canvas
+- Three.js scene with orbit controls and a procedural starfield
+- Sphere and grid projections over the same canonical graph
+- One deterministic, protected universe root
+- Typed, explicitly rendered edges
+- Durable link and note creation, editing, and deletion
+- IndexedDB persistence with transactional snapshot replacement
+- Versioned Prax JSON export
+- Validated, confirmation-gated, replace-only import
+- Stable IDs, provenance, layouts, settings, and legacy version-1 normalization
+- Responsive desktop and mobile controls
 
 ## Proposed Cloudflare architecture
 
@@ -58,16 +61,17 @@ Keeping these layers separate prevents the visual universe from becoming the dat
 
 ## Run locally
 
-This prototype has no build step. Serve the repository with any static HTTP server and open `index.html`.
+The application has no frontend build step. Install the Worker tooling and start Wrangler:
 
 ```bash
-python3 -m http.server 8000
+npm install
+npm run dev
 ```
 
-Then open `http://localhost:8000`.
+Open the local URL printed by Wrangler.
 
 ## Status
 
-The repository now contains the preserved standalone prototype and the modular Cloudflare Worker build deployed at `https://prax-your-universe.jaredtechfit.workers.dev`. The live build supports spatial navigation and in-session link creation. Persistent graph storage, authentication, semantic indexing, and AI inference have not yet been added.
+The repository contains the preserved standalone prototype and the modular Cloudflare Worker build deployed at `https://prax-your-universe.jaredtechfit.workers.dev`. PUX-005 is complete: the live build supports durable local graph CRUD, explicit root topology, IndexedDB persistence, deterministic JSON export, and validated replace-only import. Authentication, cloud synchronization, semantic indexing, and AI inference remain future milestones.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the domain model, [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for deployment details, and [`docs/ROADMAP.md`](docs/ROADMAP.md) for the canonical product and engineering roadmap.
