@@ -24,24 +24,42 @@ PUX-005 already verified deterministic import/export, malformed-payload rejectio
 - Deterministic and idempotent legacy graph normalization.
 - Full create, edit, delete, relationship, settings, save, close, and reload matrix.
 - A dedicated non-deploying GitHub Actions workflow for the PUX-006 branch.
+- Reproducible desktop and touch-mobile browser verification against a local Worker instance.
 
 ## Safety boundaries
 
 - No production deployment from the PUX-006 validation branch.
 - No graph schema or IndexedDB version increase without a demonstrated migration requirement.
-- No roadmap completion claim until automated validation and desktop/mobile live verification pass.
+- No roadmap completion claim until final review and production verification are complete.
 - Existing stable PUX-005 behavior remains the baseline and must not regress.
 
-## Initial validation evidence
+## Automated validation evidence
 
-Commit `781554a82dac8a8e1951f7495ad30f7812846fcc` passed the dedicated non-deploying GitHub Actions workflow.
+Commit `781554a82dac8a8e1951f7495ad30f7812846fcc` passed the first dedicated non-deploying GitHub Actions workflow.
 
 - Workflow: `Validate PUX-006`
 - Run: `29783478285`
-- `npm test`: passed
+- Existing tests plus five focused PUX-006 regression cases: passed
 - JavaScript syntax checks: passed
 - Wrangler deployment dry-run: passed
 - Production deployment: not performed
+
+Commit `35e9b9abc01011c8c89045ffaaaf6409d5122223` passed the complete validation workflow including browser verification.
+
+- Workflow run: `29784010623`
+- Unit and integration tests: passed
+- JavaScript syntax checks: passed
+- Wrangler deployment dry-run: passed
+- Desktop browser verification at 1440 × 900: passed
+- Mobile browser verification at 390 × 844 with touch emulation: passed
+- Invalid URL alert and graph non-mutation: passed
+- Valid link creation and IndexedDB persistence across reload: passed
+- One canonical root and one root `contains` edge per non-root node: passed
+- Horizontal overflow check: passed
+- Console, page, request, and HTTP failure collection: passed with no captured failures
+- Browser screenshots, verifier report, verifier log, and Wrangler log were retained as workflow artifacts
+
+## Independent production baseline evidence
 
 Independent baseline browser capture `vb_5c94c8f7` completed successfully against the unchanged PUX-005 production application.
 
@@ -49,9 +67,15 @@ Independent baseline browser capture `vb_5c94c8f7` completed successfully agains
 - Mobile child run: `vb_5c94c8f7_1` at 390 × 844 with mobile and touch emulation
 - Both captures completed with stored screenshot, HTML, accessibility, console, network, and manifest evidence
 
+## Defect classification
+
+The first browser-enabled workflow run `29783655361` failed because the verifier awaited completion of a Playwright click before dismissing the JavaScript alert triggered by that click. The click and verifier therefore waited on each other until timeout.
+
+This was a verifier ordering defect, not a product defect. The dialog listener and click are now started together, the dialog is dismissed, and the click is then awaited. The corrected workflow passed without changing application code.
+
 ## Remaining work
 
-- Inspect the browser evidence for explicit console, network, overflow, and accessibility findings.
-- Add or refine tests only where evidence shows a coverage gap.
-- Add dedicated interactive browser verification for the PUX-006 acceptance matrix.
+- Review the branch diff and browser artifacts before merge.
+- Decide whether a dedicated PUX-006 production verifier should be added to the main deployment workflow or whether the existing PUX-005 production verifier plus independent visual evidence is sufficient.
 - Update the canonical roadmap and release documentation only after final acceptance.
+- Merge only after review; no merge or production deployment has been performed from this branch.
