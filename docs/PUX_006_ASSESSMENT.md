@@ -32,9 +32,26 @@ PUX-005 already verified deterministic import/export, malformed-payload rejectio
 - No roadmap completion claim until automated validation and desktop/mobile live verification pass.
 - Existing stable PUX-005 behavior remains the baseline and must not regress.
 
+## Initial validation evidence
+
+Commit `781554a82dac8a8e1951f7495ad30f7812846fcc` passed the dedicated non-deploying GitHub Actions workflow.
+
+- Workflow: `Validate PUX-006`
+- Run: `29783478285`
+- `npm test`: passed
+- JavaScript syntax checks: passed
+- Wrangler deployment dry-run: passed
+- Production deployment: not performed
+
+Independent baseline browser capture `vb_5c94c8f7` completed successfully against the unchanged PUX-005 production application.
+
+- Desktop child run: `vb_5c94c8f7_0` at 1440 × 900
+- Mobile child run: `vb_5c94c8f7_1` at 390 × 844 with mobile and touch emulation
+- Both captures completed with stored screenshot, HTML, accessibility, console, network, and manifest evidence
+
 ## Remaining work
 
-- Run the dedicated branch validation workflow and classify any failures.
+- Inspect the browser evidence for explicit console, network, overflow, and accessibility findings.
 - Add or refine tests only where evidence shows a coverage gap.
-- Add dedicated browser verification for desktop and mobile.
+- Add dedicated interactive browser verification for the PUX-006 acceptance matrix.
 - Update the canonical roadmap and release documentation only after final acceptance.
