@@ -112,7 +112,6 @@ const runViewport = async (browser, viewport) => {
   assert.equal(dimensions.scrollWidth <= dimensions.viewportWidth, true);
   assert.deepEqual(failures, []);
 
-  await mkdir(artifactDir, { recursive: true });
   await page.screenshot({ path: `${artifactDir}/${viewport.name}.png`, fullPage: true });
   await context.close();
 
@@ -127,20 +126,30 @@ const runViewport = async (browser, viewport) => {
 };
 
 await mkdir(artifactDir, { recursive: true });
-const health = await waitForServer();
-const browser = await chromium.launch({ headless: true });
-const results = [];
-try {
-  for (const viewport of viewports) results.push(await runViewport(browser, viewport));
-} finally {
-  await browser.close();
-}
-
 const report = {
-  ok: true,
+  ok: false,
   baseUrl,
-  health,
-  results
+  health: null,
+  results: []
 };
-await writeFile(`${artifactDir}/report.json`, `${JSON.stringify(report, null, 2)}\n`);
-console.log(JSON.stringify(report, null, 2));
+let browser = null;
+try {
+  report.health = await waitForServer();
+  browser = await chromium.launch({ headless: true });
+  for (const viewport of viewports) report.results.push(await runViewport(browser, viewport));
+  report.ok = true;
+} catch (error) {
+  report.error = {
+    name: error?.name ?? 'Error',
+    message: error?.message ?? String(error),
+    stack: error?.stack ?? null
+  };
+  const annotation = report.error.message.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+  console.error(`::error title=PUX-006 browser verifier::${annotation}`);
+  console.error(error);
+  process.exitCode = 1;
+} finally {
+  await browser?.close();
+  await writeFile(`${artifactDir}/report.json`, `${JSON.stringify(report, null, 2)}\n`);
+  console.log(JSON.stringify(report, null, 2));
+}
