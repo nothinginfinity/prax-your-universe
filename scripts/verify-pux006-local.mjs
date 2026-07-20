@@ -70,10 +70,11 @@ const runViewport = async (browser, viewport) => {
   await page.fill('#node-title-input', `Rejected ${viewport.name} link`);
   await page.fill('#node-url-input', 'javascript:alert(1)');
   const dialogPromise = page.waitForEvent('dialog');
-  await page.click('#submit-node-btn');
+  const clickPromise = page.click('#submit-node-btn');
   const dialog = await dialogPromise;
   assert.match(dialog.message(), /http or https/i);
   await dialog.dismiss();
+  await clickPromise;
   await page.waitForFunction(() => !document.querySelector('#submit-node-btn').disabled);
 
   const afterInvalid = await getState(page);
