@@ -26,3 +26,20 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - run: npm install --no-save --package-lock=false playwright@1.55.0
+      - run: npx playwright install --with-deps chromium
+      - name: Run PUX-006 desktop and mobile browser verification
+        run: |
+          npx wrangler dev --local --port 8787 > /tmp/prax-pux006.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          node scripts/verify-pux006-local.mjs
+        env:
+          PRAX_LOCAL_URL: http://127.0.0.1:8787
+          PRAX_VISUAL_ARTIFACT_DIR: artifacts/pux006-local
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pux006-local-browser-evidence
+          path: artifacts/pux006-local
+          if-no-files-found: warn
