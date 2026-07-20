@@ -30,10 +30,12 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Run PUX-006 desktop and mobile browser verification
         run: |
-          npx wrangler dev --local --port 8787 > /tmp/prax-pux006.log 2>&1 &
+          set -euo pipefail
+          mkdir -p artifacts/pux006-local
+          npx wrangler dev --local --ip 127.0.0.1 --port 8787 > artifacts/pux006-local/wrangler.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
-          node scripts/verify-pux006-local.mjs
+          node scripts/verify-pux006-local.mjs 2>&1 | tee artifacts/pux006-local/verifier.log
         env:
           PRAX_LOCAL_URL: http://127.0.0.1:8787
           PRAX_VISUAL_ARTIFACT_DIR: artifacts/pux006-local
@@ -42,4 +44,4 @@ jobs:
         with:
           name: pux006-local-browser-evidence
           path: artifacts/pux006-local
-          if-no-files-found: warn
+          if-no-files-found: error
