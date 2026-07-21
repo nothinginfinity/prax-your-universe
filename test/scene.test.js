@@ -24,6 +24,11 @@ class FakeVector3 {
   copy(value) {
     return this.set(value.x, value.y, value.z);
   }
+
+  project(camera) {
+    camera?.projectVector?.(this);
+    return this;
+  }
 }
 
 class FakeVector2 {
@@ -123,6 +128,10 @@ class FakeObject3D {
     this.position = new FakeVector3();
     this.userData = {};
     this.scale = { setScalar: (value) => { this.scale.value = value; } };
+  }
+
+  getWorldPosition(target) {
+    return target.copy(this.position);
   }
 }
 
@@ -283,6 +292,35 @@ test('scene node removal disposes the node and every connected rendered edge', (
     assert.equal(scene.edgeObjectById.has(line.userData.edgeId), false);
   }
   assert.equal(scene.meshByNodeId.has(second.id), true);
+});
+
+test('touch selection refreshes tap coordinates, expands the hit target, and rejects orbit drags', () => {
+  const selections = [];
+  const canvas = {
+    style: {},
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 200, height: 200 })
+  };
+  const scene = new PraxScene(canvas, (nodeId) => selections.push(nodeId), { three: THREE });
+  scene.camera = {
+    position: new FakeVector3(),
+    projectVector: (vector) => vector.set(vector.x / 10, vector.y / 10, 0)
+  };
+  const store = new GraphStore();
+  const node = store.listNodes().find(({ nodeType }) => nodeType !== 'universe_root');
+  scene.addNodes([node]);
+  scene.meshByNodeId.get(node.id).position.set(0, 0, 0);
+
+  assert.equal(scene.findTouchTarget(124, 100)?.userData.nodeId, node.id);
+  assert.equal(scene.findTouchTarget(130, 100), null);
+
+  scene.handlePointerDown({ isPrimary: true, pointerId: 1, pointerType: 'touch', clientX: 124, clientY: 100 });
+  scene.handlePointerUp({ pointerId: 1, pointerType: 'touch', clientX: 124, clientY: 100 });
+  assert.deepEqual(selections, [node.id]);
+
+  scene.handlePointerDown({ isPrimary: true, pointerId: 2, pointerType: 'touch', clientX: 100, clientY: 100 });
+  scene.handlePointerMove({ pointerId: 2, pointerType: 'touch', clientX: 130, clientY: 100 });
+  scene.handlePointerUp({ pointerId: 2, pointerType: 'touch', clientX: 130, clientY: 100 });
+  assert.deepEqual(selections, [node.id]);
 });
 
 test('full scene replacement disposes removed resources and creates no duplicate meshes or lines', () => {
