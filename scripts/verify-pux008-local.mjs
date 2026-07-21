@@ -55,6 +55,12 @@ const exerciseFocusCycle = async (page, viewport, exitMode) => {
   const rootId = initial.roots[0].id;
 
   await page.evaluate((nodeId) => globalThis.__PRAX_TEST__.selectNode(nodeId), rootId);
+  await page.waitForFunction(() => globalThis.__PRAX_TEST__.getState().searchlightOpen === true);
+  const rootSelection = await getState(page);
+  assert.equal(rootSelection.selectedNodeId, rootId);
+  assert.equal(await page.isVisible('#searchlight-input'), true);
+  assert.equal(await page.getAttribute('#searchlight-launcher-btn', 'aria-expanded'), 'true');
+  if (!viewport.hasTouch) assert.equal(await page.evaluate(() => document.activeElement?.id), 'searchlight-input');
   await page.fill('#searchlight-input', initial.nodes.find(({ id }) => id === rootId).title);
   await page.waitForFunction(() => globalThis.__PRAX_TEST__.getState().searchlight.total > 0);
   if (viewport.reducedMotion === 'no-preference') await sleep(550);
@@ -72,6 +78,7 @@ const exerciseFocusCycle = async (page, viewport, exitMode) => {
 
   const active = await getState(page);
   assert.equal(active.searchlight.query, '');
+  assert.equal(active.searchlightOpen, false);
   assert.equal(active.galaxyFocus.active, true);
   assert.equal(active.galaxyFocus.focusedNodeId, rootId);
   assert.equal(active.galaxyFocus.nodeObjectCount, baselineNodeObjects);
@@ -143,9 +150,16 @@ const runViewport = async (browser, viewport) => {
   assert.equal(gridCycle.baseline.currentView, 'grid');
   assert.equal(gridCycle.active.currentView, 'grid');
 
+  await page.click('#searchlight-launcher-btn');
+  await page.fill('#searchlight-input', 'welcome');
+  await page.waitForFunction(() => globalThis.__PRAX_TEST__.getState().searchlight.total > 0);
+
   const dimensions = await page.evaluate(() => {
     const controls = document.querySelector('.controls-top').getBoundingClientRect();
     const searchlight = document.querySelector('#searchlight').getBoundingClientRect();
+    const infoPanel = document.querySelector('#info-panel').getBoundingClientRect();
+    const launcher = document.querySelector('#searchlight-launcher-btn').getBoundingClientRect();
+    const focus = document.querySelector('#focus-btn').getBoundingClientRect();
     return {
       viewportWidth: innerWidth,
       viewportHeight: innerHeight,
@@ -155,7 +169,17 @@ const runViewport = async (browser, viewport) => {
       controlsTop: controls.top,
       searchlightLeft: searchlight.left,
       searchlightRight: searchlight.right,
-      searchlightBottom: searchlight.bottom
+      searchlightBottom: searchlight.bottom,
+      infoPanelLeft: infoPanel.left,
+      infoPanelRight: infoPanel.right,
+      infoPanelTop: infoPanel.top,
+      infoPanelBottom: infoPanel.bottom,
+      coveredRatio: (infoPanel.width * infoPanel.height) / (innerWidth * innerHeight),
+      launcherLeft: launcher.left,
+      launcherRight: launcher.right,
+      launcherBottom: launcher.bottom,
+      focusLeft: focus.left,
+      focusRight: focus.right
     };
   });
   assert.equal(dimensions.scrollWidth <= dimensions.viewportWidth, true);
@@ -164,6 +188,16 @@ const runViewport = async (browser, viewport) => {
   assert.equal(dimensions.searchlightLeft >= 0, true);
   assert.equal(dimensions.searchlightRight <= dimensions.viewportWidth, true);
   assert.equal(dimensions.searchlightBottom <= dimensions.viewportHeight, true);
+  assert.equal(dimensions.infoPanelLeft >= 0, true);
+  assert.equal(dimensions.infoPanelRight <= dimensions.viewportWidth, true);
+  assert.equal(dimensions.infoPanelTop >= 0, true);
+  assert.equal(dimensions.infoPanelBottom <= dimensions.viewportHeight, true);
+  assert.equal(dimensions.coveredRatio < 0.6, true);
+  assert.equal(dimensions.launcherLeft >= 0, true);
+  assert.equal(dimensions.launcherRight <= dimensions.viewportWidth, true);
+  assert.equal(dimensions.launcherBottom <= dimensions.viewportHeight, true);
+  assert.equal(dimensions.focusLeft >= 0, true);
+  assert.equal(dimensions.focusRight <= dimensions.viewportWidth, true);
   assert.deepEqual(failures, []);
 
   await page.screenshot({ path: `${artifactDir}/${viewport.name}.png`, fullPage: true });
