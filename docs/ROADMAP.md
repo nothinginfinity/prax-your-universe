@@ -128,6 +128,39 @@ The user should be able to build a small universe, refresh the page, search it, 
 
 Galaxy Focus is a projection and interaction mode. It must not rewrite node identity, canonical coordinates, explicit edges, or semantic-index data.
 
+### v0.2.3 — Node-centered graph UX
+
+**Goal:** Make every node easier to manipulate, expand, search from, and eventually converse with while preserving local-first graph correctness.
+
+- Replace the fixed coarse-pointer tolerance with adaptive hit testing derived from projected node size, camera distance, device pixel ratio, viewport, and pointer type.
+- Allow a selected node to create a child node through an explicit typed parent/child edge.
+- Preserve the canonical universe-root membership edge for every non-root node; hierarchy supplements root membership rather than replacing it.
+- Create child nodes atomically with both their root-membership edge and parent/child edge, rolling back the entire operation on failure.
+- Keep semantic node type separate from visual appearance.
+- Add validated manual node appearance overrides with `auto` as the default.
+- Support a finite shape allowlist and validated color palette or normalized custom color values.
+- Persist appearance overrides and parent/child relationships through IndexedDB reload and Prax import/export.
+- Add node-centered local search scopes such as This Node, Children, Neighborhood, and Universe.
+- Keep the selected anchor node visibly central while scoped search is active and restore the exact prior camera, projection, selection, and emphasis state on exit.
+- Prepare a node-centered chat drawer and context-builder contract without requiring the entire universe to be transmitted.
+- Treat local search and external chat as separate trust boundaries.
+- Require explicit user action and a visible context preview before node content is sent to a model provider.
+- Use a provider adapter so Cloudflare Workers AI can be the first chat provider without becoming a permanent hard-coded dependency.
+- Confirm the exact supported fast Llama model identifier during implementation rather than recording an unverified model name here.
+- Keep provider credentials and model calls in the Worker, never browser JavaScript.
+- Gate production model access behind authentication, rate limits, privacy controls, cancellation, timeout, and error handling.
+- Allow successful conversations to be saved later as `conversation` nodes linked to their anchor through an explicit relationship such as `discusses` or `derived_from`.
+
+### v0.2.3 acceptance criteria
+
+- Touch selection adapts across zoom levels without visually enlarging nodes or weakening desktop precision.
+- Tap-versus-drag rejection remains deterministic on mobile.
+- A user can create a child node without violating the single-root or root-membership invariants.
+- Child relationships and manual appearance overrides survive reload and import/export round trips.
+- Changing node shape or color does not alter semantic type, identity, provenance, timestamps, or edges.
+- Scoped local search preserves its anchor and restores the exact previous spatial state on exit.
+- Chat preparation remains optional, explicit, inspectable, and unable to break local graph operation when the provider is unavailable.
+
 ### v0.2 acceptance criteria
 
 - A user can create, edit, connect, and delete nodes.
@@ -382,7 +415,7 @@ A user can:
 
 ## 5. Immediate implementation plan
 
-The next active release remains **v0.2.0 — Local Graph Core**. After PUX-006 acceptance, the next implementation package is **PUX-007 — Searchlight and shared navigation foundation**, followed by **PUX-008 — Galaxy Focus**.
+PUX-006 validation, PUX-007 Searchlight, PUX-008 Galaxy Focus, and the PUX-008 mobile touch refinement are accepted on `pux-008-galaxy-focus` at commit `203243c74e79739dab7d5930331289a7a66de547`. The next implementation sequence is PUX-009 through PUX-014 below. Each package remains independently reviewable, reversible, tested on desktop and mobile, and guarded behind a feature-branch preview until explicit acceptance.
 
 ### Work package PUX-001 — Client graph schema — complete
 
@@ -422,7 +455,10 @@ The next active release remains **v0.2.0 — Local Graph Core**. After PUX-006 a
 - Preserve one canonical universe root and roll back graph, persistence, and scene state on replacement failure.
 - Verify export, destructive import, reload persistence, malformed-payload rejection, and desktop/mobile behavior in production.
 
-### Work package PUX-006 — Validation and tests
+### Work package PUX-006 — Validation and tests — complete and accepted
+
+**Accepted boundary:** PUX-006 branch-preview and physical-device validation completed before Searchlight and Galaxy Focus implementation.
+
 
 - Test persistence after reload.
 - Test schema upgrades.
@@ -448,7 +484,10 @@ The next active release remains **v0.2.0 — Local Graph Core**. After PUX-006 a
 
 **Long-term release pattern:** Use version preview aliases for stateless branch testing. Use a fully separate staging Worker and separate D1, KV, R2, queues, secrets, and other stateful resources whenever a branch can read or mutate server-side state.
 
-### Queued work package PUX-007 — Searchlight and shared navigation foundation
+### Work package PUX-007 — Searchlight and shared navigation foundation — complete and accepted
+
+**Accepted boundary:** Exact local Searchlight, shared navigation/restoration behavior, keyboard activation, and mobile dismissal behavior were validated before PUX-008.
+
 
 **Dependencies:** PUX-004 node CRUD and PUX-006 validation acceptance.
 
@@ -464,7 +503,10 @@ The next active release remains **v0.2.0 — Local Graph Core**. After PUX-006 a
 - Build selection, neighborhood, camera, and restoration logic as shared modules for Galaxy Focus.
 - Verify keyboard, touch, mobile viewport, reduced-motion, and reload behavior.
 
-### Queued work package PUX-008 — Galaxy Focus
+### Work package PUX-008 — Galaxy Focus and mobile touch refinement — complete and accepted
+
+**Accepted boundary:** Galaxy Focus and the subsequent iPhone node-selection refinement are accepted at commit `203243c74e79739dab7d5930331289a7a66de547`. The final refinement performs a fresh tap-position raycast, applies coarse-pointer tolerance, rejects drag gestures, preserves desktop precision, and keeps Searchlight/Galaxy restoration invariants intact.
+
 
 **Dependencies:** PUX-003 root node and edges, plus the PUX-007 Searchlight shared navigation foundation.
 
@@ -477,6 +519,74 @@ The next active release remains **v0.2.0 — Local Graph Core**. After PUX-006 a
 - Add Back, Escape, Reset View, and reduced-motion behavior.
 - Test repeated entry and exit without coordinate drift or leaked scene objects.
 - Verify performance on desktop and mobile with realistic local graph sizes.
+
+### Queued work package PUX-009 — Adaptive node hit testing
+
+**Dependencies:** Accepted PUX-008 mobile touch refinement.
+
+- Derive effective touch hit radius from projected node size, camera distance or zoom, device pixel ratio, viewport, and pointer type.
+- Preserve precise fine-pointer behavior.
+- Preserve deterministic tap-versus-drag rejection.
+- Add unit and mobile-browser verification across zoom levels and small nodes.
+
+### Queued work package PUX-010 — Child node hierarchy
+
+**Dependencies:** PUX-003 root topology, PUX-004 CRUD, PUX-005 import/export, and PUX-006 validation.
+
+- Define an explicit parent/child edge type and direction.
+- Keep the universe-root membership edge for every non-root node.
+- Create the node, root-membership edge, and parent/child edge atomically.
+- Place a new child near its parent in the active layout without storing render coordinates in canonical node content.
+- Add Add Child, child count, compact child list, and parent navigation to the selected-node UI.
+- Do not silently cascade-delete children when a parent is deleted.
+- Verify rollback, persistence, export/import, replacement, root invariants, and desktop/mobile interaction.
+
+### Queued work package PUX-011 — Manual node appearance
+
+**Dependencies:** Stable node identity and scene resource-update behavior.
+
+- Define a validated visual-style override separate from semantic `nodeType`.
+- Keep `auto` as the default appearance mode.
+- Add an initial finite shape allowlist: sphere, cube, diamond or octahedron, and ring or torus.
+- Add palette colors and validated normalized custom colors.
+- Decide through a documented schema decision whether overrides belong in layout/view records or a dedicated visual-style record.
+- Add Appearance and Reset Appearance actions to the selected-node panel.
+- Update existing render objects safely without changing node identity, edges, provenance, or semantic type.
+- Persist and round-trip appearance overrides.
+
+### Queued work package PUX-012 — Node-centered scoped search
+
+**Dependencies:** PUX-007 shared Searchlight navigation and PUX-010 hierarchy.
+
+- Reuse the exact local Searchlight engine.
+- Add explicit scopes: This Node, Children, Neighborhood, and Universe.
+- Keep the selected node as a stable search anchor while results change.
+- Show each result's relationship to the anchor.
+- Restore the exact previous camera, projection, selected node, and emphasis state on exit.
+- Keep all search local and deterministic.
+
+### Queued work package PUX-013 — Node-centered chat foundation
+
+**Dependencies:** PUX-012 anchor/scoping behavior. Production provider access additionally depends on an authenticated and rate-limited Worker boundary.
+
+- Add Search and Chat actions to the selected-node panel.
+- Build a chat drawer that visibly pins the anchor node and included context scope.
+- Add a context preview and explicit send action.
+- Include only selected fields and relationships rather than transmitting the entire universe.
+- Add a provider/model adapter and keep credentials in the Worker.
+- Prepare Cloudflare Workers AI as the initial provider and verify the exact supported fast Llama model when implementation begins.
+- Define cancellation, timeout, context limits, error, offline, and unavailable-provider behavior.
+- Preserve local-first graph operation when chat is unavailable.
+- Prepare successful chats to be saved as conversation nodes linked to their anchor without mutating the anchor.
+
+### Queued work package PUX-014 — Automatic appearance suggestions
+
+**Dependencies:** PUX-011 manual appearance and a stable content-classification boundary.
+
+- Suggest shape and color from semantic type or content.
+- Keep every suggestion explainable and manually overridable.
+- Never overwrite a manual appearance choice without explicit confirmation.
+- Keep classification suggestions separate from canonical node meaning.
 
 ## 6. Build order and dependency gates
 
