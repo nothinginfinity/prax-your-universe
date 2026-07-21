@@ -10,10 +10,12 @@ import {
   parsePraxBundleText
 } from './prax-bundle.js';
 import { createNavigationSnapshot, getExplicitNeighborhoodNodeIds } from './graph-navigation.js';
-import { PraxScene, getNodeVisualMetadata } from './scene.js';
+import { GalaxyPraxScene as PraxScene } from './galaxy-scene.js';
+import { GalaxyFocusController } from './galaxy-focus-controller.js';
+import { getNodeVisualMetadata } from './scene.js';
 import { SearchlightSession } from './searchlight.js';
 
-const APP_VERSION = '0.2.0-pux.7';
+const APP_VERSION = '0.2.0-pux.8';
 
 const infoPanel = document.querySelector('#info-panel');
 const infoTitle = document.querySelector('#info-title');
@@ -35,6 +37,10 @@ const bodyField = document.querySelector('#node-body-field');
 const statusPill = document.querySelector('#status-pill');
 const transferStatus = document.querySelector('#transfer-status');
 const viewToggleButton = document.querySelector('#view-toggle-btn');
+const focusButton = document.querySelector('#focus-btn');
+const backButton = document.querySelector('#back-btn');
+const galaxyResetButton = document.querySelector('#galaxy-reset-btn');
+const galaxyFocusStatus = document.querySelector('#galaxy-focus-status');
 const submitNodeButton = document.querySelector('#submit-node-btn');
 const exportButton = document.querySelector('#export-btn');
 const importButton = document.querySelector('#import-btn');
@@ -66,6 +72,7 @@ let editingNodeId = null;
 let modalMode = 'create';
 let pendingImport = null;
 let transferMessage = 'Import/export ready';
+let galaxyFocusController = null;
 const searchlightSession = new SearchlightSession();
 let searchNavigationSnapshot = null;
 const reducedMotionQuery = matchMedia('(prefers-reduced-motion: reduce)');
@@ -106,6 +113,8 @@ const store = await initializeStore();
 const showNode = (node) => {
   selectedNodeId = node?.id ?? null;
   infoPanel.classList.toggle('visible', Boolean(node));
+  infoPanel.setAttribute('aria-hidden', String(!node));
+  galaxyFocusController?.setSelectedNodeId(selectedNodeId);
   if (!node) return;
   const visual = getNodeVisualMetadata(node.nodeType);
   const editable = node.nodeType !== UNIVERSE_ROOT_NODE_TYPE;
@@ -186,6 +195,7 @@ function selectActiveSearchResult({ navigate = true } = {}) {
 }
 
 function runSearchlight(query = searchlightInput.value) {
+  if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
   const nextQuery = String(query ?? '');
   searchlightInput.value = nextQuery;
   if (!nextQuery.trim()) {
@@ -217,6 +227,7 @@ function dismissSearchlight({ restore = true, clearInput = true } = {}) {
 }
 
 function resetSearchlightView() {
+  if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
   searchNavigationSnapshot = null;
   searchlightSession.clear();
   searchlightInput.value = '';
@@ -226,7 +237,26 @@ function resetSearchlightView() {
   updateSearchlightUi();
 }
 
+galaxyFocusController = new GalaxyFocusController({
+  scene,
+  focusButton,
+  backButton,
+  statusElement: galaxyFocusStatus,
+  dismissSearchlight: () => {
+    if (isSearchlightActive()) dismissSearchlight({ restore: false });
+  },
+  prefersReducedMotion,
+  onStateChange: (state) => {
+    document.body.dataset.galaxyFocus = state.state;
+    viewToggleButton.disabled = state.active;
+  }
+});
+galaxyFocusController.setSelectedNodeId(selectedNodeId);
+
 function handleSceneSelection(nodeId) {
+  if (scene.isGalaxyFocusActive() && nodeId !== scene.getGalaxyFocusState().focusedNodeId) {
+    galaxyFocusController.exit();
+  }
   if (isSearchlightActive()) {
     if (nodeId && searchlightSession.select(nodeId)) {
       selectActiveSearchResult();
@@ -238,6 +268,7 @@ function handleSceneSelection(nodeId) {
 }
 
 const projectSnapshot = (snapshot) => {
+  if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
   scene.replaceGraph(snapshot.nodes, snapshot.edges);
   scene.setView(store.getPreferredLayout());
 };
@@ -245,6 +276,7 @@ const projectSnapshot = (snapshot) => {
 const getPuxVerificationState = () => {
   const snapshot = store.snapshot();
   return {
+    applicationVersion: APP_VERSION,
     workerLabel,
     persistenceLabel,
     transferMessage,
@@ -253,6 +285,7 @@ const getPuxVerificationState = () => {
     cameraState: scene.captureCameraState(),
     searchlight: searchlightSession.snapshot(),
     searchNavigationSnapshot,
+    galaxyFocus: scene.getGalaxyFocusState(),
     emphasis: scene.getEmphasisState(),
     reducedMotion: prefersReducedMotion(),
     importModalVisible: importModal.classList.contains('visible'),
@@ -327,6 +360,7 @@ const updateViewButton = () => {
 };
 
 const replaceUniverse = async (snapshot) => {
+  if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
   dismissSearchlight({ restore: false });
   const committed = await commitGraphReplacement({
     store,
@@ -341,7 +375,7 @@ const replaceUniverse = async (snapshot) => {
 };
 
 const testMilestone = new URLSearchParams(location.search).get('puxTest');
-if (['003', '004', '005', '006', '007'].includes(testMilestone)) {
+if (['003', '004', '005', '006', '007', '008'].includes(testMilestone)) {
   Object.defineProperty(globalThis, '__PRAX_TEST__', {
     configurable: false,
     enumerable: false,
@@ -353,6 +387,8 @@ if (['003', '004', '005', '006', '007'].includes(testMilestone)) {
         handleSceneSelection(node?.id ?? null);
         return Boolean(node);
       },
+      focusNode: (nodeId = selectedNodeId) => galaxyFocusController.enter(nodeId),
+      backFromFocus: () => galaxyFocusController.exit(),
       search: (query) => runSearchlight(query),
       nextSearchResult: () => {
         searchlightSession.move(1);
@@ -404,6 +440,7 @@ nextSearchResultButton.addEventListener('click', () => {
 });
 closeSearchlightButton.addEventListener('click', () => dismissSearchlight({ restore: true }));
 resetViewButton.addEventListener('click', resetSearchlightView);
+galaxyResetButton.addEventListener('click', resetSearchlightView);
 searchlightInput.addEventListener('keydown', (event) => {
   if (!isSearchlightActive()) return;
   if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
@@ -418,6 +455,7 @@ searchlightInput.addEventListener('keydown', (event) => {
 });
 
 viewToggleButton.addEventListener('click', async () => {
+  if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
   if (isSearchlightActive()) dismissSearchlight({ restore: true });
   const nextView = scene.getView() === 'sphere' ? 'grid' : 'sphere';
   viewToggleButton.disabled = true;
@@ -443,6 +481,7 @@ const syncNodeTypeFields = () => {
 };
 
 const openCreateModal = () => {
+  if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
   if (isSearchlightActive()) dismissSearchlight({ restore: true });
   modalMode = 'create';
   editingNodeId = null;
@@ -460,6 +499,7 @@ const openCreateModal = () => {
 
 const openEditModal = (node) => {
   if (!node || node.nodeType === UNIVERSE_ROOT_NODE_TYPE) return;
+  if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
   modalMode = 'edit';
   editingNodeId = node.id;
   modalTitle.textContent = `Edit ${getNodeVisualMetadata(node.nodeType).label}`;
@@ -525,6 +565,7 @@ deleteNodeButton.addEventListener('click', async () => {
   const node = store.getNode(selectedNodeId);
   if (!node || node.nodeType === UNIVERSE_ROOT_NODE_TYPE) return;
   if (!confirm(`Delete “${node.title}” and all of its connected edges?`)) return;
+  if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
   if (isSearchlightActive()) dismissSearchlight({ restore: false });
   deleteNodeButton.disabled = true;
   try {
@@ -596,6 +637,7 @@ const openImportSummary = (parsed, filename) => {
 };
 
 importButton.addEventListener('click', () => {
+  if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
   if (isSearchlightActive()) dismissSearchlight({ restore: true });
   importFileInput.click();
 });
@@ -654,7 +696,7 @@ confirmImportButton.addEventListener('click', async () => {
 addEventListener('keydown', (event) => {
   const target = event.target;
   const editingText = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
-  if (event.key === '/' && !editingText && !modal.classList.contains('visible') && !importModal.classList.contains('visible')) {
+  if (event.key === '/' && !editingText && !modal.classList.contains('visible') && !importModal.classList.contains('visible') && !scene.isGalaxyFocusActive()) {
     event.preventDefault();
     searchlightInput.focus();
     searchlightInput.select();
@@ -666,6 +708,8 @@ addEventListener('keydown', (event) => {
     setTransferStatus('Import cancelled');
   } else if (modal.classList.contains('visible')) {
     closeModal();
+  } else if (galaxyFocusController.handleEscape()) {
+    event.preventDefault();
   } else if (isSearchlightActive()) {
     dismissSearchlight({ restore: true });
   } else if (selectedNodeId) {
