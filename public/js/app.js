@@ -63,6 +63,7 @@ const previousSearchResultButton = document.querySelector('#searchlight-previous
 const nextSearchResultButton = document.querySelector('#searchlight-next-btn');
 const closeSearchlightButton = document.querySelector('#searchlight-close-btn');
 const resetViewButton = document.querySelector('#reset-view-btn');
+const searchlightLauncherButton = document.querySelector('#searchlight-launcher-btn');
 
 let repository = null;
 let persistenceLabel = 'Memory only';
@@ -75,7 +76,9 @@ let transferMessage = 'Import/export ready';
 let galaxyFocusController = null;
 const searchlightSession = new SearchlightSession();
 let searchNavigationSnapshot = null;
+let searchlightOpen = false;
 const reducedMotionQuery = matchMedia('(prefers-reduced-motion: reduce)');
+const coarsePointerQuery = matchMedia('(pointer: coarse)');
 
 const renderStatus = () => {
   statusPill.textContent = `${workerLabel} · ${persistenceLabel}`;
@@ -110,12 +113,21 @@ const initializeStore = async () => {
 
 const store = await initializeStore();
 
-const showNode = (node) => {
-  selectedNodeId = node?.id ?? null;
-  infoPanel.classList.toggle('visible', Boolean(node));
-  infoPanel.setAttribute('aria-hidden', String(!node));
-  galaxyFocusController?.setSelectedNodeId(selectedNodeId);
-  if (!node) return;
+const renderInfoPanel = (node) => {
+  const visible = Boolean(node) || searchlightOpen;
+  infoPanel.classList.toggle('visible', visible);
+  infoPanel.setAttribute('aria-hidden', String(!visible));
+  if (!node) {
+    infoTitle.textContent = 'Search your universe';
+    infoType.textContent = 'Searchlight';
+    infoType.dataset.nodeType = 'searchlight';
+    infoDetails.textContent = 'Exact local title, body, URL, and node-type search';
+    infoBody.textContent = '';
+    infoBody.hidden = true;
+    infoLink.hidden = true;
+    infoActions.hidden = true;
+    return;
+  }
   const visual = getNodeVisualMetadata(node.nodeType);
   const editable = node.nodeType !== UNIVERSE_ROOT_NODE_TYPE;
   infoTitle.textContent = node.title;
@@ -129,6 +141,14 @@ const showNode = (node) => {
   if (visitable) infoLink.href = node.url;
   infoActions.hidden = !editable;
 };
+
+const showNode = (node) => {
+  selectedNodeId = node?.id ?? null;
+  galaxyFocusController?.setSelectedNodeId(selectedNodeId);
+  renderInfoPanel(node);
+};
+
+const refreshInfoPanel = () => renderInfoPanel(selectedNodeId ? store.getNode(selectedNodeId) : null);
 
 const showMutationError = (error) => {
   const graphIssue = error instanceof GraphValidationError ? error.issues[0]?.message : null;
@@ -153,7 +173,10 @@ function isSearchlightActive() {
 function updateSearchlightUi() {
   const state = searchlightSession.snapshot();
   const active = Boolean(state.query);
+  searchlightPanel.hidden = !searchlightOpen;
   searchlightPanel.classList.toggle('active', active);
+  searchlightLauncherButton.setAttribute('aria-expanded', String(searchlightOpen));
+  searchlightLauncherButton.setAttribute('aria-label', searchlightOpen ? 'Close Searchlight' : 'Open Searchlight');
   searchlightResults.hidden = !active;
   searchlightCount.textContent = active ? `${state.total ? state.currentIndex + 1 : 0} of ${state.total}` : '';
   previousSearchResultButton.disabled = state.total < 2;
@@ -161,6 +184,18 @@ function updateSearchlightUi() {
   searchlightStatus.textContent = !active
     ? 'Exact local search - Press / to focus'
     : (state.total ? `Exact match ${state.currentIndex + 1} of ${state.total}` : 'No exact local matches');
+}
+
+function setSearchlightOpen(open, { focus = false } = {}) {
+  searchlightOpen = Boolean(open);
+  refreshInfoPanel();
+  updateSearchlightUi();
+  if (searchlightOpen && focus) {
+    requestAnimationFrame(() => {
+      searchlightInput.focus();
+      searchlightInput.select();
+    });
+  }
 }
 
 function captureSearchNavigationState() {
@@ -196,10 +231,11 @@ function selectActiveSearchResult({ navigate = true } = {}) {
 
 function runSearchlight(query = searchlightInput.value) {
   if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
+  if (!searchlightOpen) setSearchlightOpen(true);
   const nextQuery = String(query ?? '');
   searchlightInput.value = nextQuery;
   if (!nextQuery.trim()) {
-    dismissSearchlight({ restore: true, clearInput: false });
+    dismissSearchlight({ restore: true, clearInput: false, closePanel: false });
     return searchlightSession.snapshot();
   }
   captureSearchNavigationState();
@@ -208,13 +244,13 @@ function runSearchlight(query = searchlightInput.value) {
   return searchlightSession.snapshot();
 }
 
-function dismissSearchlight({ restore = true, clearInput = true } = {}) {
+function dismissSearchlight({ restore = true, clearInput = true, closePanel = true } = {}) {
   const previousState = searchNavigationSnapshot;
   searchNavigationSnapshot = null;
   searchlightSession.clear();
   if (clearInput) searchlightInput.value = '';
+  if (closePanel) searchlightOpen = false;
   scene.clearSearchEmphasis();
-  updateSearchlightUi();
   if (restore && previousState) {
     if (scene.getView() !== previousState.projection) {
       scene.setView(previousState.projection, { resetCamera: false });
@@ -222,7 +258,10 @@ function dismissSearchlight({ restore = true, clearInput = true } = {}) {
     scene.restoreCameraState(previousState.cameraState, { immediate: prefersReducedMotion() });
     showNode(previousState.selectedNodeId ? store.getNode(previousState.selectedNodeId) : null);
     updateViewButton();
+  } else {
+    refreshInfoPanel();
   }
+  updateSearchlightUi();
   return previousState;
 }
 
@@ -243,12 +282,13 @@ galaxyFocusController = new GalaxyFocusController({
   backButton,
   statusElement: galaxyFocusStatus,
   dismissSearchlight: () => {
-    if (isSearchlightActive()) dismissSearchlight({ restore: false });
+    if (isSearchlightActive() || searchlightOpen) dismissSearchlight({ restore: false });
   },
   prefersReducedMotion,
   onStateChange: (state) => {
     document.body.dataset.galaxyFocus = state.state;
     viewToggleButton.disabled = state.active;
+    searchlightLauncherButton.disabled = state.active;
   }
 });
 galaxyFocusController.setSelectedNodeId(selectedNodeId);
@@ -264,7 +304,11 @@ function handleSceneSelection(nodeId) {
     }
     dismissSearchlight({ restore: false });
   }
-  showNode(nodeId ? store.getNode(nodeId) : null);
+  const node = nodeId ? store.getNode(nodeId) : null;
+  showNode(node);
+  if (node?.nodeType === UNIVERSE_ROOT_NODE_TYPE) {
+    setSearchlightOpen(true, { focus: !coarsePointerQuery.matches });
+  }
 }
 
 const projectSnapshot = (snapshot) => {
