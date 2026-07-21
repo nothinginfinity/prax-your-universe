@@ -150,7 +150,7 @@ function updateSearchlightUi() {
   previousSearchResultButton.disabled = state.total < 2;
   nextSearchResultButton.disabled = state.total < 2;
   searchlightStatus.textContent = !active
-    ? 'Exact local search Â· Press / to focus'
+    ? 'Exact local search - Press / to focus'
     : (state.total ? `Exact match ${state.currentIndex + 1} of ${state.total}` : 'No exact local matches');
 }
 
