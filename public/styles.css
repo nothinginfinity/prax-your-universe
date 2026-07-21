@@ -9,19 +9,10 @@ body {
 [hidden] { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
-canvas {
-  display: block;
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-}
+canvas { display: block; position: absolute; inset: 0; z-index: 1; }
+canvas:focus-visible { outline: 2px solid #38bdf8; outline-offset: -4px; }
 
-.ui-element {
-  position: absolute;
-  z-index: 100;
-  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
+.ui-element { position: absolute; z-index: 100; transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
 .controls-top { top: 20px; left: 20px; display: grid; gap: 0.55rem; max-width: calc(100vw - 40px); }
 .control-row, .status-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.55rem; }
 .add-control { bottom: 20px; left: 50%; transform: translateX(-50%); }
@@ -41,11 +32,16 @@ canvas {
 }
 
 .btn:hover { background: rgba(50, 50, 55, 0.9); transform: translateY(-2px); }
-.btn:disabled { cursor: wait; opacity: 0.65; transform: none; }
+.btn:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
+.btn:disabled { cursor: not-allowed; opacity: 0.5; transform: none; }
 .add-btn { font-size: 1.5rem; padding: 1rem 1.5rem; border-radius: 999px; background: #2563eb; }
 .danger-btn { background: rgba(153, 27, 27, 0.9); }
+.galaxy-focus-btn[aria-pressed="true"], .galaxy-back-btn { background: rgba(109, 40, 217, 0.9); border-color: rgba(196, 181, 253, 0.7); }
 .status-pill { padding: 0.55rem 0.8rem; border-radius: 999px; background: rgba(20, 20, 25, 0.8); color: #9ca3af; font-size: 0.75rem; }
 .transfer-status { color: #bfdbfe; }
+.galaxy-focus-status { color: #ddd6fe; }
+body[data-galaxy-focus="active"] .searchlight { opacity: 0.42; pointer-events: none; }
+body[data-galaxy-focus="active"] .add-control { opacity: 0.42; pointer-events: none; }
 
 .searchlight {
   top: 112px;
@@ -83,7 +79,6 @@ canvas {
   pointer-events: none;
   overflow: hidden;
 }
-
 #info-panel.visible { opacity: 1; visibility: visible; pointer-events: all; }
 .info-content { padding: 20px; }
 .node-type-badge { display: inline-flex; padding: 0.3rem 0.6rem; border-radius: 999px; background: rgba(56, 189, 248, 0.16); color: #bae6fd; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
@@ -94,20 +89,7 @@ canvas {
 #info-link { display: block; margin-top: 1rem; text-align: center; background: #0077b6; }
 .info-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 1rem; }
 
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(10px);
-  z-index: 200;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-}
-
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.72); backdrop-filter: blur(10px); z-index: 200; display: flex; justify-content: center; align-items: center; opacity: 0; visibility: hidden; pointer-events: none; }
 .modal-backdrop:not(.visible) * { pointer-events: none !important; }
 .modal-backdrop.visible { opacity: 1; visibility: visible; pointer-events: all; }
 .modal-container { background: rgba(30, 30, 35, 0.98); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 1rem; padding: 2rem; width: 90%; max-width: 520px; max-height: calc(100vh - 32px); overflow-y: auto; box-sizing: border-box; }
@@ -124,24 +106,23 @@ canvas {
 .import-summary dd { margin: 0; overflow-wrap: anywhere; color: #f3f4f6; }
 .memory-warning { padding: 0.8rem; border: 1px solid rgba(251, 191, 36, 0.4); border-radius: 0.75rem; color: #fde68a; background: rgba(120, 53, 15, 0.25); }
 
-@media (prefers-reduced-motion: reduce) {
-  .ui-element, .btn { transition: none !important; }
-}
+@media (prefers-reduced-motion: reduce) { .ui-element, .btn { transition: none !important; } }
 
 @media (max-width: 640px) {
   .controls-top { top: 10px; left: 10px; max-width: calc(100vw - 20px); gap: 0.4rem; }
   .control-row, .status-row { gap: 0.4rem; }
-  .controls-top .btn { padding: 0.58rem 0.72rem; font-size: 0.78rem; }
+  .controls-top .btn { padding: 0.58rem 0.72rem; font-size: 0.78rem; min-height: 44px; }
   .status-pill { max-width: calc(50vw - 18px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.45rem 0.6rem; }
-  .searchlight { top: 108px; left: 10px; width: calc(100vw - 20px); padding: 0.6rem; }
+  .galaxy-focus-status { max-width: calc(100vw - 20px); }
+  .searchlight { top: 154px; left: 10px; width: calc(100vw - 20px); padding: 0.6rem; }
   .searchlight-form { grid-template-columns: minmax(0, 1fr) auto; }
   .searchlight-submit { display: none; }
-  .searchlight-input { font-size: 16px; }
+  .searchlight-input { font-size: 16px; min-height: 44px; }
   .searchlight-results { flex-wrap: wrap; }
   .searchlight-reset { margin-left: 0; flex: 1; }
-  #info-panel { top: auto; right: 12px; bottom: 84px; width: calc(100vw - 24px); }
+  #info-panel { top: auto; right: 12px; bottom: 84px; width: calc(100vw - 24px); max-height: min(52vh, 420px); overflow-y: auto; }
   .modal-container { padding: 1.25rem; width: calc(100% - 24px); }
   .modal-actions { flex-direction: column; gap: 0.75rem; }
-  .modal-actions .btn { width: 100%; }
+  .modal-actions .btn { width: 100%; min-height: 44px; }
   .import-summary div { grid-template-columns: 1fr; gap: 0.3rem; }
 }
