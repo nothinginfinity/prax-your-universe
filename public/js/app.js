@@ -78,7 +78,6 @@ const searchlightSession = new SearchlightSession();
 let searchNavigationSnapshot = null;
 let searchlightOpen = false;
 const reducedMotionQuery = matchMedia('(prefers-reduced-motion: reduce)');
-const hasTouchInput = navigator.maxTouchPoints > 0;
 
 const renderStatus = () => {
   statusPill.textContent = `${workerLabel} · ${persistenceLabel}`;
@@ -310,7 +309,7 @@ function handleSceneSelection(nodeId) {
   const node = nodeId ? store.getNode(nodeId) : null;
   showNode(node);
   if (node?.nodeType === UNIVERSE_ROOT_NODE_TYPE) {
-    setSearchlightOpen(true, { focus: !hasTouchInput, deferFocus: true });
+    setSearchlightOpen(true);
   }
 }
 
