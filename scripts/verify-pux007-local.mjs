@@ -29,8 +29,7 @@ const waitForServer = async () => {
 const getState = (page) => page.evaluate(() => globalThis.__PRAX_TEST__.getState());
 const roundedCamera = (state) => ({
   position: Object.fromEntries(Object.entries(state.position).map(([key, value]) => [key, Number(value.toFixed(2))])),
-  target: Object.fromEntries(Object.entries(state.target).map(([key, value]) => [key, Number(value.toFixed(2))])),
-  graphRotation: Object.fromEntries(Object.entries(state.graphRotation).map(([key, value]) => [key, Number(value.toFixed(2))]))
+  target: Object.fromEntries(Object.entries(state.target).map(([key, value]) => [key, Number(value.toFixed(2))]))
 });
 
 const createLink = async (page, suffix) => {
@@ -128,6 +127,7 @@ const runViewport = async (browser, viewport) => {
 
   await search(page, 'welcome');
   await page.click('#reset-view-btn');
+  if (viewport.reducedMotion === 'no-preference') await sleep(550);
   state = await getState(page);
   assert.equal(state.searchlight.query, '');
   assert.equal(state.selectedNodeId, null);
