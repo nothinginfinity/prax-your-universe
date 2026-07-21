@@ -60,7 +60,10 @@ const exerciseFocusCycle = async (page, viewport, exitMode) => {
   assert.equal(rootSelection.selectedNodeId, rootId);
   assert.equal(await page.isVisible('#searchlight-input'), true);
   assert.equal(await page.getAttribute('#searchlight-launcher-btn', 'aria-expanded'), 'true');
-  if (!viewport.hasTouch) assert.equal(await page.evaluate(() => document.activeElement?.id), 'searchlight-input');
+  if (!viewport.hasTouch) {
+    await page.waitForFunction(() => document.activeElement?.id === 'searchlight-input');
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'searchlight-input');
+  }
   await page.fill('#searchlight-input', initial.nodes.find(({ id }) => id === rootId).title);
   await page.waitForFunction(() => globalThis.__PRAX_TEST__.getState().searchlight.total > 0);
   if (viewport.reducedMotion === 'no-preference') await sleep(550);
