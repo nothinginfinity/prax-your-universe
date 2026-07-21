@@ -92,7 +92,7 @@ const runViewport = async (browser, viewport) => {
   assert.equal(await page.isVisible('#searchlight-input'), true);
   assert.equal(await page.getAttribute('#searchlight-launcher-btn', 'aria-expanded'), 'true');
   await page.click('#searchlight-close-btn');
-  await page.evaluate(() => globalThis.__PRAX_TEST__.selectNode(null));
+  await page.evaluate((nodeId) => globalThis.__PRAX_TEST__.selectNode(nodeId), baselineSelection);
 
   await page.keyboard.press('/');
   assert.equal(await page.evaluate(() => document.activeElement?.id), 'searchlight-input');
