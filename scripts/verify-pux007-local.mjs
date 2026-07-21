@@ -91,7 +91,25 @@ const runViewport = async (browser, viewport) => {
   assert.equal(rootState.selectedNodeId, rootId);
   assert.equal(await page.isVisible('#searchlight-input'), true);
   assert.equal(await page.getAttribute('#searchlight-launcher-btn', 'aria-expanded'), 'true');
+  assert.equal(await page.evaluate(() => document.activeElement?.id === 'searchlight-input'), false);
+  assert.equal(await page.locator('#info-panel').evaluate((panel) => panel.classList.contains('root-searchlight-open')), true);
+  assert.equal(await page.isVisible('#info-details'), false);
   await page.click('#searchlight-close-btn');
+  assert.equal(await page.locator('#info-panel').evaluate((panel) => panel.classList.contains('root-searchlight-open')), false);
+  assert.equal(await page.isVisible('#info-details'), true);
+
+  if (viewport.hasTouch) {
+    await page.evaluate(() => globalThis.__PRAX_TEST__.selectNode(null));
+    const rootScreenPosition = await page.evaluate((nodeId) => globalThis.__PRAX_TEST__.getNodeScreenPosition(nodeId), rootId);
+    assert.ok(rootScreenPosition);
+    await page.touchscreen.tap(rootScreenPosition.x, rootScreenPosition.y);
+    await page.waitForFunction((nodeId) => {
+      const state = globalThis.__PRAX_TEST__.getState();
+      return state.selectedNodeId === nodeId && state.searchlightOpen === true;
+    }, rootId);
+    assert.equal(await page.evaluate(() => document.activeElement?.id === 'searchlight-input'), false);
+    await page.click('#searchlight-close-btn');
+  }
   await page.evaluate((nodeId) => globalThis.__PRAX_TEST__.selectNode(nodeId), baselineSelection);
 
   await page.keyboard.press('/');
@@ -140,6 +158,22 @@ const runViewport = async (browser, viewport) => {
   assert.equal(state.emphasis.activeNodeId, null);
 
   await search(page, 'welcome');
+  const searchTouchTargets = await page.evaluate(() => {
+    const close = document.querySelector('#searchlight-close-btn').getBoundingClientRect();
+    const previous = document.querySelector('#searchlight-previous-btn').getBoundingClientRect();
+    const next = document.querySelector('#searchlight-next-btn').getBoundingClientRect();
+    const reset = document.querySelector('#reset-view-btn').getBoundingClientRect();
+    return {
+      close: { width: close.width, height: close.height },
+      previous: { width: previous.width, height: previous.height },
+      next: { width: next.width, height: next.height },
+      reset: { width: reset.width, height: reset.height }
+    };
+  });
+  for (const target of Object.values(searchTouchTargets)) {
+    assert.equal(target.width >= 44, true);
+    assert.equal(target.height >= 44, true);
+  }
   await page.click('#reset-view-btn');
   if (viewport.reducedMotion === 'no-preference') await sleep(550);
   state = await getState(page);
