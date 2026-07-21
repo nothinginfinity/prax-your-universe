@@ -191,10 +191,8 @@ function setSearchlightOpen(open, { focus = false } = {}) {
   refreshInfoPanel();
   updateSearchlightUi();
   if (searchlightOpen && focus) {
-    requestAnimationFrame(() => {
-      searchlightInput.focus();
-      searchlightInput.select();
-    });
+    searchlightInput.focus();
+    searchlightInput.select();
   }
 }
 
