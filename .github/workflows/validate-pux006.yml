@@ -45,11 +45,24 @@ jobs:
         env:
           PRAX_LOCAL_URL: http://127.0.0.1:8787
           PRAX_VISUAL_ARTIFACT_DIR: artifacts/pux006-local
+      - name: Run PUX-007 desktop and mobile Searchlight verification
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/pux007-local
+          npx wrangler dev --local --ip 127.0.0.1 --port 8787 > artifacts/pux007-local/wrangler.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          node scripts/verify-pux007-local.mjs 2>&1 | tee artifacts/pux007-local/verifier.log
+        env:
+          PRAX_LOCAL_URL: http://127.0.0.1:8787
+          PRAX_VISUAL_ARTIFACT_DIR: artifacts/pux007-local
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: pux006-local-browser-evidence
-          path: artifacts/pux006-local
+          name: pux006-pux007-local-browser-evidence
+          path: |
+            artifacts/pux006-local
+            artifacts/pux007-local
           if-no-files-found: error
 
   preview:
