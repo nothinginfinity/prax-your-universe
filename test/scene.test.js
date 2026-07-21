@@ -156,6 +156,7 @@ class FakeRaycaster {
 const THREE = {
   Group: FakeGroup,
   Vector2: FakeVector2,
+  Vector3: FakeVector3,
   Color: FakeColor,
   BufferGeometry: FakeBufferGeometry,
   Float32BufferAttribute: FakeFloat32BufferAttribute,
