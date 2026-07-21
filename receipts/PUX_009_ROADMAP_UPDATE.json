@@ -1,0 +1,93 @@
+{
+  "worker": "afo-gitzip",
+  "version": "0.2.2-unified",
+  "action": "apply_repo_text_patch",
+  "target": {
+    "owner": "nothinginfinity",
+    "repo": "prax-your-universe",
+    "branch": "pux-008-galaxy-focus",
+    "path": "docs/ROADMAP.md"
+  },
+  "source_sha": "011bf50e17d0f12678c5b87605a244870d1983c4",
+  "result_sha": "94ffca98715e21adc8e2d378876906166ec361fb",
+  "commit_sha": "bfc0c93759db09308e25a400dc53b21f51042bef",
+  "diff": {
+    "before_length": 21321,
+    "after_length": 29198,
+    "delta": 7877,
+    "common_prefix": 6087,
+    "common_suffix": 1751,
+    "before_fingerprint": "3a0fdb95",
+    "after_fingerprint": "77d796b7"
+  },
+  "applied": [
+    {
+      "label": "op_0",
+      "type": "replace_exact",
+      "changed": true,
+      "replaced": 1
+    },
+    {
+      "label": "op_1",
+      "type": "replace_exact",
+      "changed": true,
+      "replaced": 1
+    },
+    {
+      "label": "op_2",
+      "type": "replace_exact",
+      "changed": true,
+      "replaced": 1
+    },
+    {
+      "label": "op_3",
+      "type": "replace_exact",
+      "changed": true,
+      "replaced": 1
+    },
+    {
+      "label": "op_4",
+      "type": "replace_exact",
+      "changed": true,
+      "replaced": 1
+    },
+    {
+      "label": "op_5",
+      "type": "replace_exact",
+      "changed": true,
+      "replaced": 1
+    }
+  ],
+  "verification": {
+    "ok": true,
+    "results": [
+      {
+        "label": "contains",
+        "ok": true,
+        "detail": "contains"
+      },
+      {
+        "label": "contains",
+        "ok": true,
+        "detail": "contains"
+      },
+      {
+        "label": "contains",
+        "ok": true,
+        "detail": "contains"
+      },
+      {
+        "label": "contains",
+        "ok": true,
+        "detail": "contains"
+      },
+      {
+        "label": "not_contains",
+        "ok": true,
+        "detail": "absent"
+      }
+    ],
+    "failed": []
+  },
+  "timestamp": "2026-07-21T23:21:53.422Z"
+}
