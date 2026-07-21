@@ -50,6 +50,7 @@ const createNote = async (page, suffix) => {
 };
 
 const search = async (page, query) => {
+  if (!(await page.isVisible('#searchlight-input'))) await page.click('#searchlight-launcher-btn');
   await page.fill('#searchlight-input', query);
   await page.waitForFunction((expected) => globalThis.__PRAX_TEST__.getState().searchlight.query === expected.toLowerCase(), query);
   return getState(page);
@@ -82,6 +83,16 @@ const runViewport = async (browser, viewport) => {
   const baseline = await getState(page);
   const baselineCamera = roundedCamera(baseline.cameraState);
   const baselineSelection = baseline.selectedNodeId;
+  const rootId = baseline.roots[0].id;
+
+  await page.evaluate((nodeId) => globalThis.__PRAX_TEST__.selectNode(nodeId), rootId);
+  await page.waitForFunction(() => globalThis.__PRAX_TEST__.getState().searchlightOpen === true);
+  let rootState = await getState(page);
+  assert.equal(rootState.selectedNodeId, rootId);
+  assert.equal(await page.isVisible('#searchlight-input'), true);
+  assert.equal(await page.getAttribute('#searchlight-launcher-btn', 'aria-expanded'), 'true');
+  await page.click('#searchlight-close-btn');
+  await page.evaluate(() => globalThis.__PRAX_TEST__.selectNode(null));
 
   await page.keyboard.press('/');
   assert.equal(await page.evaluate(() => document.activeElement?.id), 'searchlight-input');
@@ -138,19 +149,39 @@ const runViewport = async (browser, viewport) => {
 
   const dimensions = await page.evaluate(() => {
     const searchlight = document.querySelector('#searchlight').getBoundingClientRect();
+    const infoPanel = document.querySelector('#info-panel').getBoundingClientRect();
+    const launcher = document.querySelector('#searchlight-launcher-btn').getBoundingClientRect();
     return {
       viewportWidth: innerWidth,
       viewportHeight: innerHeight,
       scrollWidth: document.documentElement.scrollWidth,
       searchlightLeft: searchlight.left,
       searchlightRight: searchlight.right,
-      searchlightTop: searchlight.top
+      searchlightTop: searchlight.top,
+      searchlightBottom: searchlight.bottom,
+      infoPanelLeft: infoPanel.left,
+      infoPanelRight: infoPanel.right,
+      infoPanelTop: infoPanel.top,
+      infoPanelBottom: infoPanel.bottom,
+      coveredRatio: (infoPanel.width * infoPanel.height) / (innerWidth * innerHeight),
+      launcherLeft: launcher.left,
+      launcherRight: launcher.right,
+      launcherBottom: launcher.bottom
     };
   });
   assert.equal(dimensions.scrollWidth <= dimensions.viewportWidth, true);
   assert.equal(dimensions.searchlightLeft >= 0, true);
   assert.equal(dimensions.searchlightRight <= dimensions.viewportWidth, true);
   assert.equal(dimensions.searchlightTop >= 0, true);
+  assert.equal(dimensions.searchlightBottom <= dimensions.viewportHeight, true);
+  assert.equal(dimensions.infoPanelLeft >= 0, true);
+  assert.equal(dimensions.infoPanelRight <= dimensions.viewportWidth, true);
+  assert.equal(dimensions.infoPanelTop >= 0, true);
+  assert.equal(dimensions.infoPanelBottom <= dimensions.viewportHeight, true);
+  assert.equal(dimensions.coveredRatio < 0.6, true);
+  assert.equal(dimensions.launcherLeft >= 0, true);
+  assert.equal(dimensions.launcherRight <= dimensions.viewportWidth, true);
+  assert.equal(dimensions.launcherBottom <= dimensions.viewportHeight, true);
   assert.deepEqual(failures, []);
 
   await page.screenshot({ path: `${artifactDir}/${viewport.name}.png`, fullPage: true });
