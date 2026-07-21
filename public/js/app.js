@@ -15,7 +15,7 @@ import { GalaxyFocusController } from './galaxy-focus-controller.js';
 import { getNodeVisualMetadata } from './scene.js';
 import { SearchlightSession } from './searchlight.js';
 
-const APP_VERSION = '0.2.0-pux.8';
+const APP_VERSION = '0.2.0-pux.8.1';
 
 const infoPanel = document.querySelector('#info-panel');
 const infoTitle = document.querySelector('#info-title');
@@ -114,7 +114,9 @@ const store = await initializeStore();
 
 const renderInfoPanel = (node) => {
   const visible = Boolean(node) || searchlightOpen;
+  const rootSearchlightOpen = Boolean(node) && searchlightOpen && node.nodeType === UNIVERSE_ROOT_NODE_TYPE;
   infoPanel.classList.toggle('visible', visible);
+  infoPanel.classList.toggle('root-searchlight-open', rootSearchlightOpen);
   infoPanel.setAttribute('aria-hidden', String(!visible));
   if (!node) {
     infoTitle.textContent = 'Search your universe';
@@ -429,6 +431,7 @@ if (['003', '004', '005', '006', '007', '008'].includes(testMilestone)) {
     writable: false,
     value: Object.freeze({
       getState: getPuxVerificationState,
+      getNodeScreenPosition: (nodeId) => scene.getNodeScreenPosition(nodeId),
       selectNode: (nodeId) => {
         const node = store.getNode(nodeId);
         handleSceneSelection(node?.id ?? null);
