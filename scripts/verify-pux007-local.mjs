@@ -87,6 +87,9 @@ const runViewport = async (browser, viewport) => {
   assert.equal(await page.evaluate(() => document.activeElement?.id), 'searchlight-input');
 
   let state = await search(page, `PUX-007 Link ${viewport.name}`);
+  if (viewport.reducedMotion === 'no-preference') await sleep(550);
+  state = await getState(page);
+  assert.notDeepEqual(roundedCamera(state.cameraState).target, baselineCamera.target);
   assert.equal(state.searchlight.total, 1);
   assert.equal(state.nodes.find(({ id }) => id === state.searchlight.activeNodeId)?.title, `PUX-007 Link ${viewport.name}`);
   assert.equal(state.selectedNodeId, state.searchlight.activeNodeId);
