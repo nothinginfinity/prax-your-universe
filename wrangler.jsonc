@@ -3,6 +3,7 @@
   "name": "prax-your-universe",
   "main": "src/worker.js",
   "compatibility_date": "2026-07-18",
+  "preview_urls": true,
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
