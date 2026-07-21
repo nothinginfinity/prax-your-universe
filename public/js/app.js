@@ -328,6 +328,7 @@ const getPuxVerificationState = () => {
     currentView: scene.getView(),
     cameraState: scene.captureCameraState(),
     searchlight: searchlightSession.snapshot(),
+    searchlightOpen,
     searchNavigationSnapshot,
     galaxyFocus: scene.getGalaxyFocusState(),
     emphasis: scene.getEmphasisState(),
@@ -469,6 +470,11 @@ if (['003', '004', '005', '006', '007', '008'].includes(testMilestone)) {
 updateViewButton();
 updateSearchlightUi();
 
+searchlightLauncherButton.addEventListener('click', () => {
+  if (searchlightOpen) dismissSearchlight({ restore: true });
+  else setSearchlightOpen(true, { focus: true });
+});
+
 searchlightForm.addEventListener('submit', (event) => {
   event.preventDefault();
   runSearchlight();
@@ -500,7 +506,7 @@ searchlightInput.addEventListener('keydown', (event) => {
 
 viewToggleButton.addEventListener('click', async () => {
   if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
-  if (isSearchlightActive()) dismissSearchlight({ restore: true });
+  if (isSearchlightActive() || searchlightOpen) dismissSearchlight({ restore: true });
   const nextView = scene.getView() === 'sphere' ? 'grid' : 'sphere';
   viewToggleButton.disabled = true;
   try {
@@ -526,7 +532,7 @@ const syncNodeTypeFields = () => {
 
 const openCreateModal = () => {
   if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
-  if (isSearchlightActive()) dismissSearchlight({ restore: true });
+  if (isSearchlightActive() || searchlightOpen) dismissSearchlight({ restore: true });
   modalMode = 'create';
   editingNodeId = null;
   modalTitle.textContent = 'Add a new node';
@@ -601,7 +607,7 @@ submitNodeButton.addEventListener('click', async () => {
 });
 
 editNodeButton.addEventListener('click', () => {
-  if (isSearchlightActive()) dismissSearchlight({ restore: false });
+  if (isSearchlightActive() || searchlightOpen) dismissSearchlight({ restore: false });
   openEditModal(store.getNode(selectedNodeId));
 });
 
@@ -610,7 +616,7 @@ deleteNodeButton.addEventListener('click', async () => {
   if (!node || node.nodeType === UNIVERSE_ROOT_NODE_TYPE) return;
   if (!confirm(`Delete “${node.title}” and all of its connected edges?`)) return;
   if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
-  if (isSearchlightActive()) dismissSearchlight({ restore: false });
+  if (isSearchlightActive() || searchlightOpen) dismissSearchlight({ restore: false });
   deleteNodeButton.disabled = true;
   try {
     await commitGraphMutation({
@@ -682,7 +688,7 @@ const openImportSummary = (parsed, filename) => {
 
 importButton.addEventListener('click', () => {
   if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
-  if (isSearchlightActive()) dismissSearchlight({ restore: true });
+  if (isSearchlightActive() || searchlightOpen) dismissSearchlight({ restore: true });
   importFileInput.click();
 });
 
@@ -742,8 +748,7 @@ addEventListener('keydown', (event) => {
   const editingText = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
   if (event.key === '/' && !editingText && !modal.classList.contains('visible') && !importModal.classList.contains('visible') && !scene.isGalaxyFocusActive()) {
     event.preventDefault();
-    searchlightInput.focus();
-    searchlightInput.select();
+    setSearchlightOpen(true, { focus: true });
     return;
   }
   if (event.key !== 'Escape') return;
@@ -754,7 +759,7 @@ addEventListener('keydown', (event) => {
     closeModal();
   } else if (galaxyFocusController.handleEscape()) {
     event.preventDefault();
-  } else if (isSearchlightActive()) {
+  } else if (isSearchlightActive() || searchlightOpen) {
     dismissSearchlight({ restore: true });
   } else if (selectedNodeId) {
     showNode(null);
