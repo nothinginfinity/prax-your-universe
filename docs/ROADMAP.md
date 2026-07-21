@@ -3,7 +3,7 @@
 **Project:** `nothinginfinity/prax-your-universe`  
 **Live application:** `https://prax-your-universe.jaredtechfit.workers.dev`  
 **Roadmap status:** Canonical planning document  
-**Updated:** July 20, 2026
+**Updated:** July 21, 2026
 
 ## 1. North star
 
@@ -382,7 +382,7 @@ A user can:
 
 ## 5. Immediate implementation plan
 
-The next active release is **v0.2.0 — Local Graph Core**.
+The next active release remains **v0.2.0 — Local Graph Core**. After PUX-006 acceptance, the next implementation package is **PUX-007 — Searchlight and shared navigation foundation**, followed by **PUX-008 — Galaxy Focus**.
 
 ### Work package PUX-001 — Client graph schema — complete
 
@@ -444,14 +444,32 @@ The next active release is **v0.2.0 — Local Graph Core**.
 - Treat preview deployment as validation infrastructure, not as a production release.
 - Close PUX-006 only after branch review, preview validation, and explicit acceptance.
 - Do not begin PUX-007 until this gate is complete.
+- After acceptance, build PUX-007 Searchlight before PUX-008 Galaxy Focus so both features share one camera, selection, neighborhood, and restoration foundation.
 
 **Long-term release pattern:** Use version preview aliases for stateless branch testing. Use a fully separate staging Worker and separate D1, KV, R2, queues, secrets, and other stateful resources whenever a branch can read or mutate server-side state.
 
-### Queued work package PUX-007 — Galaxy Focus
+### Queued work package PUX-007 — Searchlight and shared navigation foundation
 
-**Dependencies:** PUX-003 root node and edges, plus v0.2.1 Searchlight camera controls.
+**Dependencies:** PUX-004 node CRUD and PUX-006 validation acceptance.
+
+- Add exact local search across node title, body text, URL, and node type.
+- Display the current result index and total result count.
+- Add next and previous result controls.
+- Highlight the active result and dim unrelated nodes without mutating graph state.
+- Fly the camera to the active result using reusable camera-navigation controls.
+- Emphasize the selected node's immediate explicit-edge neighborhood.
+- Capture and restore the previous camera, selection, and projection state.
+- Add Reset View, Escape, and mobile-friendly dismissal behavior.
+- Keep search deterministic and local; semantic/vector search remains deferred to v0.4.
+- Build selection, neighborhood, camera, and restoration logic as shared modules for Galaxy Focus.
+- Verify keyboard, touch, mobile viewport, reduced-motion, and reload behavior.
+
+### Queued work package PUX-008 — Galaxy Focus
+
+**Dependencies:** PUX-003 root node and edges, plus the PUX-007 Searchlight shared navigation foundation.
 
 - Define focused, entering, active, and exiting projection states.
+- Reuse PUX-007 camera, selection, neighborhood, and restoration controls.
 - Capture the previous camera and layout state before entry.
 - Compute a stable local neighborhood from explicit graph edges.
 - Animate the focused node, direct neighbors, outer halo, and unrelated background groups independently.
