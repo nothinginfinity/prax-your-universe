@@ -186,13 +186,18 @@ function updateSearchlightUi() {
     : (state.total ? `Exact match ${state.currentIndex + 1} of ${state.total}` : 'No exact local matches');
 }
 
-function setSearchlightOpen(open, { focus = false } = {}) {
+function setSearchlightOpen(open, { focus = false, deferFocus = false } = {}) {
   searchlightOpen = Boolean(open);
   refreshInfoPanel();
   updateSearchlightUi();
   if (searchlightOpen && focus) {
-    searchlightInput.focus();
-    searchlightInput.select();
+    const focusInput = () => {
+      if (!searchlightOpen) return;
+      searchlightInput.focus();
+      searchlightInput.select();
+    };
+    if (deferFocus) requestAnimationFrame(focusInput);
+    else focusInput();
   }
 }
 
@@ -305,7 +310,7 @@ function handleSceneSelection(nodeId) {
   const node = nodeId ? store.getNode(nodeId) : null;
   showNode(node);
   if (node?.nodeType === UNIVERSE_ROOT_NODE_TYPE) {
-    setSearchlightOpen(true, { focus: !hasTouchInput });
+    setSearchlightOpen(true, { focus: !hasTouchInput, deferFocus: true });
   }
 }
 
@@ -470,7 +475,7 @@ updateSearchlightUi();
 
 searchlightLauncherButton.addEventListener('click', () => {
   if (searchlightOpen) dismissSearchlight({ restore: true });
-  else setSearchlightOpen(true, { focus: true });
+  else setSearchlightOpen(true, { focus: true, deferFocus: true });
 });
 
 searchlightForm.addEventListener('submit', (event) => {
