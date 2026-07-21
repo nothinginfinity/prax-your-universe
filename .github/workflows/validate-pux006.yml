@@ -14,20 +14,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: prax-pux006-validation
+  cancel-in-progress: true
+
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo ok
-
-  preview:
-    if: github.event_name == 'workflow_dispatch'
-    needs: validate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - id: preview
-        run: |
-          echo "preview_url=https://example.invalid" >> "$GITHUB_OUTPUT"
-          echo "version_id=pending" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup
