@@ -3,7 +3,7 @@
 **Project:** `nothinginfinity/prax-your-universe`  
 **Live application:** `https://prax-your-universe.jaredtechfit.workers.dev`  
 **Roadmap status:** Canonical planning document  
-**Updated:** July 19, 2026
+**Updated:** July 20, 2026
 
 ## 1. North star
 
@@ -429,6 +429,23 @@ The next active release is **v0.2.0 — Local Graph Core**.
 - Test invalid URLs and malformed imports.
 - Test edge cleanup and graph integrity.
 - Perform desktop and mobile live verification.
+
+### PUX-006 branch-preview and physical-device gate
+
+**Purpose:** Validate the exact PUX-006 branch on a real mobile device before PUX-007 begins, without merging or routing production traffic.
+
+- Upload the exact `pux-006-validation-tests` branch as a non-production Cloudflare Worker version.
+- Assign a stable branch preview alias such as `pux-006`.
+- Keep the production Worker and production route unchanged.
+- Do not add secrets or stateful bindings unless the branch actually requires them.
+- Verify `/api/health`, static assets, desktop behavior, and touch-mobile behavior against the preview URL.
+- Manually test the preview on a physical iPhone, including creation, editing, deletion, reload persistence, invalid URL handling, import rejection, and viewport usability.
+- Record the preview URL, branch commit, Worker version identifier, automated results, screenshots, and physical-device findings.
+- Treat preview deployment as validation infrastructure, not as a production release.
+- Close PUX-006 only after branch review, preview validation, and explicit acceptance.
+- Do not begin PUX-007 until this gate is complete.
+
+**Long-term release pattern:** Use version preview aliases for stateless branch testing. Use a fully separate staging Worker and separate D1, KV, R2, queues, secrets, and other stateful resources whenever a branch can read or mutate server-side state.
 
 ### Queued work package PUX-007 — Galaxy Focus
 
