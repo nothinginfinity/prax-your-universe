@@ -7,6 +7,9 @@ import {
 } from './camera-navigation.js';
 
 const PROJECTION_TYPES = Object.freeze(['sphere', 'grid']);
+const TOUCH_HIT_RADIUS_PX = 28;
+const TOUCH_TAP_MOVEMENT_PX = 14;
+const MOUSE_TAP_MOVEMENT_PX = 6;
 
 export const NODE_TYPE_VISUAL_METADATA = Object.freeze({
   universe_root: Object.freeze({ label: 'Universe root', color: 0xffffff, radius: 0.8, emissiveIntensity: 0.65 }),
@@ -90,6 +93,7 @@ export class PraxScene {
     this.raycaster = new three.Raycaster();
     this.pointer = new three.Vector2(2, 2);
     this.intersected = null;
+    this.pointerGesture = null;
     this.layoutRadius = 8;
     this.cameraTransition = null;
     this.rotationPaused = false;
@@ -116,8 +120,10 @@ export class PraxScene {
     this.addStars();
     this.camera.position.set(0, 0, 35);
     addEventListener('resize', () => this.resize());
-    this.renderer.domElement.addEventListener('pointermove', (event) => this.movePointer(event));
-    this.renderer.domElement.addEventListener('pointerdown', () => this.select());
+    this.renderer.domElement.addEventListener('pointermove', (event) => this.handlePointerMove(event));
+    this.renderer.domElement.addEventListener('pointerdown', (event) => this.handlePointerDown(event));
+    this.renderer.domElement.addEventListener('pointerup', (event) => this.handlePointerUp(event));
+    this.renderer.domElement.addEventListener('pointercancel', (event) => this.handlePointerCancel(event));
     this.animate();
   }
 
@@ -465,19 +471,98 @@ export class PraxScene {
     });
   }
 
+  getNodeScreenPosition(nodeId) {
+    const point = this.meshByNodeId.get(nodeId);
+    if (!point || !this.camera) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    const projected = new this.THREE.Vector3();
+    if (point.getWorldPosition) point.getWorldPosition(projected);
+    else projected.copy(point.position);
+    projected.project(this.camera);
+    if (projected.z < -1 || projected.z > 1) return null;
+    return Object.freeze({
+      x: rect.left + ((projected.x + 1) / 2) * rect.width,
+      y: rect.top + ((1 - projected.y) / 2) * rect.height,
+      depth: projected.z
+    });
+  }
+
+  findTouchTarget(clientX, clientY, maxDistancePx = TOUCH_HIT_RADIUS_PX) {
+    let closest = null;
+    let closestDistance = maxDistancePx;
+    for (const [nodeId, point] of this.meshByNodeId) {
+      const position = this.getNodeScreenPosition(nodeId);
+      if (!position) continue;
+      const distance = Math.hypot(clientX - position.x, clientY - position.y);
+      if (distance > closestDistance) continue;
+      closest = point;
+      closestDistance = distance;
+    }
+    return closest;
+  }
+
   movePointer(event) {
     const rect = this.canvas.getBoundingClientRect();
     this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   }
 
+  handlePointerDown(event) {
+    if (event.isPrimary === false) return false;
+    this.pointerGesture = {
+      pointerId: event.pointerId,
+      pointerType: event.pointerType || 'mouse',
+      clientX: event.clientX,
+      clientY: event.clientY,
+      moved: false
+    };
+    this.movePointer(event);
+    this.updateIntersection();
+    return true;
+  }
+
+  handlePointerMove(event) {
+    this.movePointer(event);
+    const gesture = this.pointerGesture;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const threshold = gesture.pointerType === 'touch' ? TOUCH_TAP_MOVEMENT_PX : MOUSE_TAP_MOVEMENT_PX;
+    if (Math.hypot(event.clientX - gesture.clientX, event.clientY - gesture.clientY) > threshold) {
+      gesture.moved = true;
+    }
+  }
+
+  handlePointerUp(event) {
+    const gesture = this.pointerGesture;
+    if (!gesture || gesture.pointerId !== event.pointerId) return false;
+    this.pointerGesture = null;
+    const threshold = gesture.pointerType === 'touch' ? TOUCH_TAP_MOVEMENT_PX : MOUSE_TAP_MOVEMENT_PX;
+    const moved = gesture.moved || Math.hypot(event.clientX - gesture.clientX, event.clientY - gesture.clientY) > threshold;
+    if (moved) return false;
+    this.movePointer(event);
+    const useTouchFallback = gesture.pointerType === 'touch' || gesture.pointerType === 'pen';
+    this.updateIntersection({
+      touchFallback: useTouchFallback,
+      clientX: event.clientX,
+      clientY: event.clientY
+    });
+    this.select();
+    return true;
+  }
+
+  handlePointerCancel(event) {
+    if (this.pointerGesture?.pointerId === event.pointerId) this.pointerGesture = null;
+  }
+
   select() {
     this.onSelect(this.intersected?.userData.nodeId ?? null);
   }
 
-  updateIntersection() {
+  updateIntersection({ touchFallback = false, clientX = null, clientY = null } = {}) {
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hit = this.raycaster.intersectObjects(this.pointsGroup.children)[0]?.object ?? null;
+    let hit = this.raycaster.intersectObjects(this.pointsGroup.children)[0]?.object ?? null;
+    if (!hit && touchFallback && Number.isFinite(clientX) && Number.isFinite(clientY)) {
+      hit = this.findTouchTarget(clientX, clientY);
+    }
     if (hit === this.intersected) return;
     if (this.intersected) this.intersected.scale.setScalar(this.intersected.userData.emphasisScale ?? 1);
     this.intersected = hit;
