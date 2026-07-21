@@ -1,15 +1,17 @@
 {
   "name": "prax-your-universe",
-  "version": "0.2.0-pux.5",
+  "version": "0.2.0-pux.7",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "test": "node --test",
-    "check:js": "node --check public/js/graph-schema.js && node --check public/js/graph-store.js && node --check public/js/graph-mutations.js && node --check public/js/indexeddb-repository.js && node --check public/js/prax-bundle.js && node --check public/js/scene.js && node --check public/js/app.js && node --check scripts/verify-pux003-live.mjs && node --check scripts/verify-pux004-live.mjs && node --check scripts/verify-pux005-live.mjs && node --check src/worker.js",
+    "check:js": "node --check public/js/camera-navigation.js && node --check public/js/graph-navigation.js && node --check public/js/searchlight.js && node --check public/js/graph-schema.js && node --check public/js/graph-store.js && node --check public/js/graph-mutations.js && node --check public/js/indexeddb-repository.js && node --check public/js/prax-bundle.js && node --check public/js/scene.js && node --check public/js/app.js && node --check scripts/verify-pux003-live.mjs && node --check scripts/verify-pux004-live.mjs && node --check scripts/verify-pux005-live.mjs && node --check scripts/verify-pux006-local.mjs && node --check scripts/verify-pux007-local.mjs && node --check scripts/verify-pux006-preview.mjs && node --check scripts/record-pux006-preview.mjs && node --check src/worker.js",
     "check": "npm run check:js && wrangler deploy --dry-run",
-    "validate": "npm test && npm run check"
+    "validate": "npm test && npm run check",
+    "verify:pux006:preview": "node scripts/verify-pux006-preview.mjs",
+    "verify:pux007:local": "node scripts/verify-pux007-local.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.26.0"

@@ -1,4 +1,10 @@
 import { UNIVERSE_ROOT_NODE_TYPE } from './graph-schema.js';
+import {
+  captureCameraState,
+  cloneCameraState,
+  createNodeCameraState,
+  interpolateCameraState
+} from './camera-navigation.js';
 
 const PROJECTION_TYPES = Object.freeze(['sphere', 'grid']);
 
@@ -84,6 +90,14 @@ export class PraxScene {
     this.raycaster = new three.Raycaster();
     this.pointer = new three.Vector2(2, 2);
     this.intersected = null;
+    this.layoutRadius = 8;
+    this.cameraTransition = null;
+    this.rotationPaused = false;
+    this.emphasis = {
+      matchedNodeIds: new Set(),
+      neighborhoodNodeIds: new Set(),
+      activeNodeId: null
+    };
   }
 
   init() {
@@ -125,7 +139,9 @@ export class PraxScene {
       new THREE.MeshLambertMaterial({
         color,
         emissive: color,
-        emissiveIntensity: visual.emissiveIntensity
+        emissiveIntensity: visual.emissiveIntensity,
+        transparent: true,
+        opacity: 1
       })
     );
     point.userData = {
@@ -133,7 +149,9 @@ export class PraxScene {
       nodeType: node.nodeType,
       nodeTitle: node.title,
       visualKey: node.nodeType,
-      visualLabel: visual.label
+      visualLabel: visual.label,
+      baseEmissiveIntensity: visual.emissiveIntensity,
+      emphasisScale: 1
     };
     return point;
   }
@@ -163,7 +181,9 @@ export class PraxScene {
     point.material.color = setMaterialColor(point.material.color, color);
     point.material.emissive = setMaterialColor(point.material.emissive, color);
     point.material.emissiveIntensity = visual.emissiveIntensity;
+    point.userData.baseEmissiveIntensity = visual.emissiveIntensity;
     point.material.needsUpdate = true;
+    this.applyEmphasis();
     return true;
   }
 
@@ -258,34 +278,191 @@ export class PraxScene {
     this.addEdges(edges);
   }
 
-  layout() {
+  layout({ resetCamera = true } = {}) {
     const nodeDescriptors = this.pointsGroup.children.map((point) => ({
       id: point.userData.nodeId,
       nodeType: point.userData.nodeType
     }));
     const { positions, radius } = calculateProjectionPositions(nodeDescriptors);
     this.projectionPositions = positions;
+    this.layoutRadius = radius;
     for (const point of this.pointsGroup.children) {
       const target = positions.get(point.userData.nodeId)?.[this.currentView];
       if (target) point.position.set(target.x, target.y, target.z);
     }
-    if (this.camera) this.camera.position.set(0, 0, this.currentView === 'sphere' ? radius * 2.2 : 25);
+    if (this.camera && resetCamera) this.applyCameraState(this.getDefaultCameraState());
     this.syncEdgePositions();
+    this.applyEmphasis();
+  }
+
+  getDefaultCameraState(view = this.currentView) {
+    return cloneCameraState({
+      position: { x: 0, y: 0, z: view === 'sphere' ? this.layoutRadius * 2.2 : 25 },
+      target: { x: 0, y: 0, z: 0 },
+      graphRotation: { x: 0, y: 0, z: 0 }
+    });
+  }
+
+  captureCameraState() {
+    return captureCameraState(this.camera, this.controls, this.graphGroup);
+  }
+
+  applyCameraState(state, { cancelTransition = true } = {}) {
+    const next = cloneCameraState(state);
+    if (cancelTransition) this.cameraTransition = null;
+    this.camera?.position?.set(next.position.x, next.position.y, next.position.z);
+    this.controls?.target?.set?.(next.target.x, next.target.y, next.target.z);
+    if (this.graphGroup?.rotation) {
+      if ('x' in this.graphGroup.rotation) this.graphGroup.rotation.x = next.graphRotation.x;
+      this.graphGroup.rotation.y = next.graphRotation.y;
+      if ('z' in this.graphGroup.rotation) this.graphGroup.rotation.z = next.graphRotation.z;
+    }
+    this.controls?.update?.();
+    return next;
+  }
+
+  beginCameraTransition(targetState, { immediate = false, duration = 450 } = {}) {
+    const target = cloneCameraState(targetState);
+    if (immediate || duration <= 0 || !this.camera) return this.applyCameraState(target);
+    this.cameraTransition = {
+      from: this.captureCameraState(),
+      to: target,
+      startedAt: globalThis.performance?.now?.() ?? Date.now(),
+      duration
+    };
+    return target;
+  }
+
+  updateCameraTransition(now = globalThis.performance?.now?.() ?? Date.now()) {
+    if (!this.cameraTransition) return false;
+    const elapsed = now - this.cameraTransition.startedAt;
+    const progress = Math.min(1, Math.max(0, elapsed / this.cameraTransition.duration));
+    const eased = 1 - ((1 - progress) ** 3);
+    this.applyCameraState(
+      interpolateCameraState(this.cameraTransition.from, this.cameraTransition.to, eased),
+      { cancelTransition: false }
+    );
+    if (progress >= 1) this.cameraTransition = null;
+    return true;
+  }
+
+  restoreCameraState(state, options = {}) {
+    return this.beginCameraTransition(state, options);
+  }
+
+  getNodeWorldPosition(nodeId) {
+    const point = this.meshByNodeId.get(nodeId);
+    if (!point) return null;
+    const world = this.THREE.Vector3 ? new this.THREE.Vector3() : { x: 0, y: 0, z: 0 };
+    if (point.getWorldPosition) point.getWorldPosition(world);
+    else {
+      world.x = point.position.x;
+      world.y = point.position.y;
+      world.z = point.position.z;
+    }
+    return world;
+  }
+
+  navigateToNode(nodeId, { immediate = false, duration = 450, distance = 8 } = {}) {
+    const nodePosition = this.getNodeWorldPosition(nodeId);
+    if (!nodePosition) return false;
+    const destination = createNodeCameraState(nodePosition, this.captureCameraState(), { distance });
+    this.beginCameraTransition(destination, { immediate, duration });
+    return true;
+  }
+
+  resetCamera(options = {}) {
+    this.rotationPaused = false;
+    return this.beginCameraTransition(this.getDefaultCameraState(), options);
   }
 
   getView() {
     return this.currentView;
   }
 
-  setView(view) {
+  setView(view, { resetCamera = true } = {}) {
     if (!PROJECTION_TYPES.includes(view)) throw new Error(`Unsupported projection: ${view}`);
     this.currentView = view;
-    this.layout();
+    this.layout({ resetCamera });
     return this.currentView;
   }
 
-  toggleView() {
-    return this.setView(this.currentView === 'sphere' ? 'grid' : 'sphere');
+  toggleView(options = {}) {
+    return this.setView(this.currentView === 'sphere' ? 'grid' : 'sphere', options);
+  }
+
+  setSearchEmphasis({ matchedNodeIds = [], activeNodeId = null, neighborhoodNodeIds = [] } = {}) {
+    this.emphasis = {
+      matchedNodeIds: new Set(matchedNodeIds),
+      neighborhoodNodeIds: new Set(neighborhoodNodeIds),
+      activeNodeId
+    };
+    this.rotationPaused = Boolean(activeNodeId);
+    this.applyEmphasis();
+    return this.getEmphasisState();
+  }
+
+  clearSearchEmphasis() {
+    this.emphasis = {
+      matchedNodeIds: new Set(),
+      neighborhoodNodeIds: new Set(),
+      activeNodeId: null
+    };
+    this.rotationPaused = false;
+    this.applyEmphasis();
+    return this.getEmphasisState();
+  }
+
+  applyEmphasis() {
+    const { matchedNodeIds, neighborhoodNodeIds, activeNodeId } = this.emphasis;
+    const active = Boolean(activeNodeId);
+    for (const [nodeId, point] of this.meshByNodeId) {
+      const visual = getNodeVisualMetadata(point.userData.nodeType);
+      let opacity = 1;
+      let scale = 1;
+      let emissiveIntensity = visual.emissiveIntensity;
+      if (active) {
+        if (nodeId === activeNodeId) {
+          scale = 1.7;
+          emissiveIntensity = visual.emissiveIntensity * 1.9;
+        } else if (neighborhoodNodeIds.has(nodeId)) {
+          scale = 1.25;
+          emissiveIntensity = visual.emissiveIntensity * 1.35;
+        } else if (matchedNodeIds.has(nodeId)) {
+          scale = 1.08;
+          opacity = 0.72;
+        } else {
+          opacity = 0.14;
+          emissiveIntensity = visual.emissiveIntensity * 0.2;
+        }
+      }
+      point.userData.emphasisScale = scale;
+      point.material.transparent = true;
+      point.material.opacity = opacity;
+      point.material.emissiveIntensity = emissiveIntensity;
+      point.material.needsUpdate = true;
+      point.scale.setScalar(point === this.intersected ? scale * 1.2 : scale);
+    }
+
+    for (const line of this.edgeObjectById.values()) {
+      let opacity = 0.42;
+      if (active) {
+        const directlyConnected = line.userData.fromNodeId === activeNodeId || line.userData.toNodeId === activeNodeId;
+        const insideNeighborhood = neighborhoodNodeIds.has(line.userData.fromNodeId)
+          && neighborhoodNodeIds.has(line.userData.toNodeId);
+        opacity = directlyConnected ? 0.9 : (insideNeighborhood ? 0.32 : 0.06);
+      }
+      line.material.opacity = opacity;
+      line.material.needsUpdate = true;
+    }
+  }
+
+  getEmphasisState() {
+    return Object.freeze({
+      matchedNodeIds: Object.freeze([...this.emphasis.matchedNodeIds]),
+      neighborhoodNodeIds: Object.freeze([...this.emphasis.neighborhoodNodeIds]),
+      activeNodeId: this.emphasis.activeNodeId
+    });
   }
 
   movePointer(event) {
@@ -302,9 +479,9 @@ export class PraxScene {
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const hit = this.raycaster.intersectObjects(this.pointsGroup.children)[0]?.object ?? null;
     if (hit === this.intersected) return;
-    if (this.intersected) this.intersected.scale.setScalar(1);
+    if (this.intersected) this.intersected.scale.setScalar(this.intersected.userData.emphasisScale ?? 1);
     this.intersected = hit;
-    if (hit) hit.scale.setScalar(1.5);
+    if (hit) hit.scale.setScalar((hit.userData.emphasisScale ?? 1) * 1.2);
     this.canvas.style.cursor = hit ? 'pointer' : 'default';
   }
 
@@ -316,9 +493,10 @@ export class PraxScene {
 
   animate() {
     requestAnimationFrame(() => this.animate());
+    this.updateCameraTransition();
     this.controls.update();
     this.updateIntersection();
-    if (this.currentView === 'sphere') this.graphGroup.rotation.y += 0.001;
+    if (this.currentView === 'sphere' && !this.rotationPaused) this.graphGroup.rotation.y += 0.001;
     else this.graphGroup.rotation.y = this.THREE.MathUtils.lerp(this.graphGroup.rotation.y, 0, 0.05);
     this.renderer.render(this.scene, this.camera);
   }

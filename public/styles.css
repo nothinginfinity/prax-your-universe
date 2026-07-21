@@ -7,6 +7,7 @@ body {
 }
 
 [hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 canvas {
   display: block;
@@ -45,6 +46,29 @@ canvas {
 .danger-btn { background: rgba(153, 27, 27, 0.9); }
 .status-pill { padding: 0.55rem 0.8rem; border-radius: 999px; background: rgba(20, 20, 25, 0.8); color: #9ca3af; font-size: 0.75rem; }
 .transfer-status { color: #bfdbfe; }
+
+.searchlight {
+  top: 112px;
+  left: 20px;
+  width: min(560px, calc(100vw - 40px));
+  box-sizing: border-box;
+  padding: 0.75rem;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-radius: 1rem;
+  background: rgba(12, 18, 28, 0.82);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.36);
+}
+.searchlight.active { border-color: rgba(56, 189, 248, 0.55); }
+.searchlight-form { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 0.5rem; }
+.searchlight-input { min-width: 0; width: 100%; box-sizing: border-box; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 0.75rem; background: rgba(0, 0, 0, 0.48); color: #fff; padding: 0.72rem 0.85rem; font: inherit; outline: none; }
+.searchlight-input:focus { border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.16); }
+.searchlight-submit, .searchlight-close, .searchlight-step, .searchlight-reset { padding: 0.65rem 0.85rem; }
+.searchlight-close { font-size: 1.15rem; line-height: 1; }
+.searchlight-results { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.6rem; }
+.searchlight-count { min-width: 4.8rem; text-align: center; color: #e0f2fe; font-size: 0.82rem; font-weight: 700; }
+.searchlight-reset { margin-left: auto; }
+.searchlight-status { margin: 0.55rem 0 0; color: #94a3b8; font-size: 0.75rem; line-height: 1.35; }
 
 #info-panel {
   top: 20px;
@@ -100,11 +124,21 @@ canvas {
 .import-summary dd { margin: 0; overflow-wrap: anywhere; color: #f3f4f6; }
 .memory-warning { padding: 0.8rem; border: 1px solid rgba(251, 191, 36, 0.4); border-radius: 0.75rem; color: #fde68a; background: rgba(120, 53, 15, 0.25); }
 
+@media (prefers-reduced-motion: reduce) {
+  .ui-element, .btn { transition: none !important; }
+}
+
 @media (max-width: 640px) {
   .controls-top { top: 10px; left: 10px; max-width: calc(100vw - 20px); gap: 0.4rem; }
   .control-row, .status-row { gap: 0.4rem; }
   .controls-top .btn { padding: 0.58rem 0.72rem; font-size: 0.78rem; }
   .status-pill { max-width: calc(50vw - 18px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.45rem 0.6rem; }
+  .searchlight { top: 108px; left: 10px; width: calc(100vw - 20px); padding: 0.6rem; }
+  .searchlight-form { grid-template-columns: minmax(0, 1fr) auto; }
+  .searchlight-submit { display: none; }
+  .searchlight-input { font-size: 16px; }
+  .searchlight-results { flex-wrap: wrap; }
+  .searchlight-reset { margin-left: 0; flex: 1; }
   #info-panel { top: auto; right: 12px; bottom: 84px; width: calc(100vw - 24px); }
   .modal-container { padding: 1.25rem; width: calc(100% - 24px); }
   .modal-actions { flex-direction: column; gap: 0.75rem; }
