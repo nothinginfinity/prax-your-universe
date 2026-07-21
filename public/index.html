@@ -25,6 +25,22 @@
     </div>
   </div>
 
+  <section id="searchlight" class="ui-element searchlight" aria-label="Searchlight exact local search">
+    <form id="searchlight-form" class="searchlight-form" role="search">
+      <label class="sr-only" for="searchlight-input">Search nodes by title, body, URL, or type</label>
+      <input id="searchlight-input" class="searchlight-input" type="search" autocomplete="off" enterkeyhint="search" placeholder="Search your universe" aria-describedby="searchlight-status">
+      <button class="btn searchlight-submit" type="submit">Search</button>
+      <button id="searchlight-close-btn" class="btn searchlight-close" type="button" aria-label="Dismiss Searchlight">Ã</button>
+    </form>
+    <div id="searchlight-results" class="searchlight-results" hidden>
+      <button id="searchlight-previous-btn" class="btn searchlight-step" type="button" aria-label="Previous search result">â</button>
+      <span id="searchlight-count" class="searchlight-count" aria-live="polite"></span>
+      <button id="searchlight-next-btn" class="btn searchlight-step" type="button" aria-label="Next search result">â</button>
+      <button id="reset-view-btn" class="btn searchlight-reset" type="button">Reset View</button>
+    </div>
+    <p id="searchlight-status" class="searchlight-status" aria-live="polite">Exact local search Â· Press / to focus</p>
+  </section>
+
   <div class="ui-element add-control">
     <button id="add-btn" class="btn add-btn" aria-label="Add node">+</button>
   </div>
