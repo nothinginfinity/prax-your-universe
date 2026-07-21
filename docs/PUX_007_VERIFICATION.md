@@ -1,11 +1,13 @@
 # PUX-007 Verification - Searchlight and Shared Navigation Foundation
 
-**Status:** Implementation complete; automated validation passed; physical-device acceptance pending  
+**Status:** Accepted; automated validation passed; user-confirmed manual preview validation passed  
 **Working branch:** `pux-006-validation-tests`  
 **Starting commit:** `5343c342a3c7749619177a4349fbbeaa3a0c65ad`  
-**Verified implementation commit:** `4f3b370cab1b561205ff647e9b637013ad65e359`  
+**Accepted implementation commit:** `d234123e55b634eb0e9020638279acc76e7cc1cb`  
+**Rollback boundary:** `d234123e55b634eb0e9020638279acc76e7cc1cb`  
+**Stable preview:** `https://pux-006-prax-your-universe.jaredtechfit.workers.dev`  
 **Workflow:** `Validate PUX-006`  
-**Workflow run:** `29841475539`
+**Final workflow run:** `29841633541`
 
 ## Automated validation
 
@@ -66,16 +68,14 @@ PUX-007 did not change:
 
 Search emphasis and camera movement remain transient scene presentation state.
 
-## Remaining acceptance gate
+## User-confirmed manual acceptance
 
-Before PUX-007 is treated as fully accepted, manually verify the branch on physical iPhone Safari, focusing on:
+On July 21, 2026, the user manually opened the stable branch preview and confirmed that PUX-007 Searchlight was working. The user also manually inspected GitHub Actions and confirmed that the final workflow was green.
 
-- input focus and keyboard dismissal;
-- next and previous controls;
-- Escape-equivalent close button behavior;
-- Reset View;
-- viewport stability while the keyboard opens and closes;
-- reduced-motion behavior if enabled;
-- repeated search and dismissal without camera or selection drift.
+This is user-supplied manual acceptance evidence. It records acceptance of the preview and workflow outcome without claiming additional device telemetry beyond the user's confirmation.
 
-No merge to `main` and no production deployment were performed during this implementation session. PUX-008 was not started.
+## Acceptance and rollback boundary
+
+PUX-007 is accepted at commit `d234123e55b634eb0e9020638279acc76e7cc1cb`. That commit is the rollback boundary for the Searchlight implementation and the preserved PUX-006 regression suite.
+
+No merge to `main` and no production deployment were performed. PUX-008 was not started. Graph schema version 1, IndexedDB database version 1, Prax bundle version 1, canonical node identity, canonical edge identity, and import/export format remain unchanged.
