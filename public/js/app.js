@@ -9,9 +9,11 @@ import {
   createPraxExport,
   parsePraxBundleText
 } from './prax-bundle.js';
+import { createNavigationSnapshot, getExplicitNeighborhoodNodeIds } from './graph-navigation.js';
 import { PraxScene, getNodeVisualMetadata } from './scene.js';
+import { SearchlightSession } from './searchlight.js';
 
-const APP_VERSION = '0.2.0-pux.5';
+const APP_VERSION = '0.2.0-pux.7';
 
 const infoPanel = document.querySelector('#info-panel');
 const infoTitle = document.querySelector('#info-title');
@@ -45,6 +47,16 @@ const importNormalization = document.querySelector('#import-normalization');
 const importPersistenceWarning = document.querySelector('#import-persistence-warning');
 const confirmImportButton = document.querySelector('#confirm-import-btn');
 const cancelImportButton = document.querySelector('#cancel-import-btn');
+const searchlightPanel = document.querySelector('#searchlight');
+const searchlightForm = document.querySelector('#searchlight-form');
+const searchlightInput = document.querySelector('#searchlight-input');
+const searchlightResults = document.querySelector('#searchlight-results');
+const searchlightCount = document.querySelector('#searchlight-count');
+const searchlightStatus = document.querySelector('#searchlight-status');
+const previousSearchResultButton = document.querySelector('#searchlight-previous-btn');
+const nextSearchResultButton = document.querySelector('#searchlight-next-btn');
+const closeSearchlightButton = document.querySelector('#searchlight-close-btn');
+const resetViewButton = document.querySelector('#reset-view-btn');
 
 let repository = null;
 let persistenceLabel = 'Memory only';
@@ -54,6 +66,9 @@ let editingNodeId = null;
 let modalMode = 'create';
 let pendingImport = null;
 let transferMessage = 'Import/export ready';
+const searchlightSession = new SearchlightSession();
+let searchNavigationSnapshot = null;
+const reducedMotionQuery = matchMedia('(prefers-reduced-motion: reduce)');
 
 const renderStatus = () => {
   statusPill.textContent = `${workerLabel} · ${persistenceLabel}`;
@@ -115,12 +130,112 @@ const showMutationError = (error) => {
   alert(graphIssue ?? bundleMessage ?? persistenceMessage ?? error.message ?? 'The graph could not be updated.');
 };
 
-const scene = new PraxScene(document.querySelector('#main-canvas'), (nodeId) => {
-  showNode(nodeId ? store.getNode(nodeId) : null);
-});
+const scene = new PraxScene(document.querySelector('#main-canvas'), (nodeId) => handleSceneSelection(nodeId));
 scene.init();
 scene.setView(store.getPreferredLayout());
 scene.replaceGraph(store.listNodes(), store.listEdges());
+
+const prefersReducedMotion = () => reducedMotionQuery.matches;
+
+function isSearchlightActive() {
+  return Boolean(searchlightSession.snapshot().query);
+}
+
+function updateSearchlightUi() {
+  const state = searchlightSession.snapshot();
+  const active = Boolean(state.query);
+  searchlightPanel.classList.toggle('active', active);
+  searchlightResults.hidden = !active;
+  searchlightCount.textContent = active ? `${state.total ? state.currentIndex + 1 : 0} of ${state.total}` : '';
+  previousSearchResultButton.disabled = state.total < 2;
+  nextSearchResultButton.disabled = state.total < 2;
+  searchlightStatus.textContent = !active
+    ? 'Exact local search Â· Press / to focus'
+    : (state.total ? `Exact match ${state.currentIndex + 1} of ${state.total}` : 'No exact local matches');
+}
+
+function captureSearchNavigationState() {
+  if (searchNavigationSnapshot) return searchNavigationSnapshot;
+  searchNavigationSnapshot = createNavigationSnapshot({
+    cameraState: scene.captureCameraState(),
+    selectedNodeId,
+    projection: scene.getView()
+  });
+  return searchNavigationSnapshot;
+}
+
+function selectActiveSearchResult({ navigate = true } = {}) {
+  const state = searchlightSession.snapshot();
+  const node = state.activeNodeId ? store.getNode(state.activeNodeId) : null;
+  if (!node) {
+    showNode(null);
+    scene.setSearchEmphasis({ matchedNodeIds: state.resultIds });
+    updateSearchlightUi();
+    return null;
+  }
+  const neighborhoodNodeIds = getExplicitNeighborhoodNodeIds(node.id, store.listEdges());
+  showNode(node);
+  scene.setSearchEmphasis({
+    matchedNodeIds: state.resultIds,
+    activeNodeId: node.id,
+    neighborhoodNodeIds
+  });
+  if (navigate) scene.navigateToNode(node.id, { immediate: prefersReducedMotion() });
+  updateSearchlightUi();
+  return node;
+}
+
+function runSearchlight(query = searchlightInput.value) {
+  const nextQuery = String(query ?? '');
+  searchlightInput.value = nextQuery;
+  if (!nextQuery.trim()) {
+    dismissSearchlight({ restore: true, clearInput: false });
+    return searchlightSession.snapshot();
+  }
+  captureSearchNavigationState();
+  searchlightSession.update(store.listNodes(), nextQuery);
+  selectActiveSearchResult();
+  return searchlightSession.snapshot();
+}
+
+function dismissSearchlight({ restore = true, clearInput = true } = {}) {
+  const previousState = searchNavigationSnapshot;
+  searchNavigationSnapshot = null;
+  searchlightSession.clear();
+  if (clearInput) searchlightInput.value = '';
+  scene.clearSearchEmphasis();
+  updateSearchlightUi();
+  if (restore && previousState) {
+    if (scene.getView() !== previousState.projection) {
+      scene.setView(previousState.projection, { resetCamera: false });
+    }
+    scene.restoreCameraState(previousState.cameraState, { immediate: prefersReducedMotion() });
+    showNode(previousState.selectedNodeId ? store.getNode(previousState.selectedNodeId) : null);
+    updateViewButton();
+  }
+  return previousState;
+}
+
+function resetSearchlightView() {
+  searchNavigationSnapshot = null;
+  searchlightSession.clear();
+  searchlightInput.value = '';
+  scene.clearSearchEmphasis();
+  showNode(null);
+  scene.resetCamera({ immediate: prefersReducedMotion() });
+  updateSearchlightUi();
+}
+
+function handleSceneSelection(nodeId) {
+  if (isSearchlightActive()) {
+    if (nodeId && searchlightSession.select(nodeId)) {
+      selectActiveSearchResult();
+      return;
+    }
+    dismissSearchlight({ restore: false });
+  }
+  showNode(nodeId ? store.getNode(nodeId) : null);
+}
 
 const projectSnapshot = (snapshot) => {
   scene.replaceGraph(snapshot.nodes, snapshot.edges);
@@ -135,6 +250,11 @@ const getPuxVerificationState = () => {
     transferMessage,
     selectedNodeId,
     currentView: scene.getView(),
+    cameraState: scene.captureCameraState(),
+    searchlight: searchlightSession.snapshot(),
+    searchNavigationSnapshot,
+    emphasis: scene.getEmphasisState(),
+    reducedMotion: prefersReducedMotion(),
     importModalVisible: importModal.classList.contains('visible'),
     pendingImportSummary: pendingImport?.summary ?? null,
     viewport: {
@@ -180,13 +300,16 @@ const getPuxVerificationState = () => {
       nodeType: mesh.userData.nodeType,
       title: mesh.userData.nodeTitle,
       visualKey: mesh.userData.visualKey,
-      visualLabel: mesh.userData.visualLabel
+      visualLabel: mesh.userData.visualLabel,
+      opacity: mesh.material.opacity,
+      scale: mesh.scale.x
     })),
     renderedEdges: [...scene.edgeObjectById].map(([edgeId, line]) => ({
       edgeId,
       edgeClass: line.userData.edgeClass,
       fromNodeId: line.userData.fromNodeId,
       toNodeId: line.userData.toNodeId,
+      opacity: line.material.opacity,
       segment: [...line.geometry.getAttribute('position').array]
     }))
   };
@@ -204,6 +327,7 @@ const updateViewButton = () => {
 };
 
 const replaceUniverse = async (snapshot) => {
+  dismissSearchlight({ restore: false });
   const committed = await commitGraphReplacement({
     store,
     repository,
@@ -217,7 +341,7 @@ const replaceUniverse = async (snapshot) => {
 };
 
 const testMilestone = new URLSearchParams(location.search).get('puxTest');
-if (['003', '004', '005'].includes(testMilestone)) {
+if (['003', '004', '005', '006', '007'].includes(testMilestone)) {
   Object.defineProperty(globalThis, '__PRAX_TEST__', {
     configurable: false,
     enumerable: false,
@@ -226,9 +350,22 @@ if (['003', '004', '005'].includes(testMilestone)) {
       getState: getPuxVerificationState,
       selectNode: (nodeId) => {
         const node = store.getNode(nodeId);
-        showNode(node);
+        handleSceneSelection(node?.id ?? null);
         return Boolean(node);
       },
+      search: (query) => runSearchlight(query),
+      nextSearchResult: () => {
+        searchlightSession.move(1);
+        selectActiveSearchResult();
+        return searchlightSession.snapshot();
+      },
+      previousSearchResult: () => {
+        searchlightSession.move(-1);
+        selectActiveSearchResult();
+        return searchlightSession.snapshot();
+      },
+      dismissSearch: () => dismissSearchlight({ restore: true }),
+      resetView: () => resetSearchlightView(),
       createExport: (options = {}) => createPraxExport(store.snapshot(), {
         applicationVersion: APP_VERSION,
         ...options
@@ -250,8 +387,38 @@ if (['003', '004', '005'].includes(testMilestone)) {
 }
 
 updateViewButton();
+updateSearchlightUi();
+
+searchlightForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  runSearchlight();
+});
+searchlightInput.addEventListener('input', () => runSearchlight());
+previousSearchResultButton.addEventListener('click', () => {
+  searchlightSession.move(-1);
+  selectActiveSearchResult();
+});
+nextSearchResultButton.addEventListener('click', () => {
+  searchlightSession.move(1);
+  selectActiveSearchResult();
+});
+closeSearchlightButton.addEventListener('click', () => dismissSearchlight({ restore: true }));
+resetViewButton.addEventListener('click', resetSearchlightView);
+searchlightInput.addEventListener('keydown', (event) => {
+  if (!isSearchlightActive()) return;
+  if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+    event.preventDefault();
+    searchlightSession.move(1);
+    selectActiveSearchResult();
+  } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+    event.preventDefault();
+    searchlightSession.move(-1);
+    selectActiveSearchResult();
+  }
+});
 
 viewToggleButton.addEventListener('click', async () => {
+  if (isSearchlightActive()) dismissSearchlight({ restore: true });
   const nextView = scene.getView() === 'sphere' ? 'grid' : 'sphere';
   viewToggleButton.disabled = true;
   try {
@@ -276,6 +443,7 @@ const syncNodeTypeFields = () => {
 };
 
 const openCreateModal = () => {
+  if (isSearchlightActive()) dismissSearchlight({ restore: true });
   modalMode = 'create';
   editingNodeId = null;
   modalTitle.textContent = 'Add a new node';
@@ -348,12 +516,16 @@ submitNodeButton.addEventListener('click', async () => {
   }
 });
 
-editNodeButton.addEventListener('click', () => openEditModal(store.getNode(selectedNodeId)));
+editNodeButton.addEventListener('click', () => {
+  if (isSearchlightActive()) dismissSearchlight({ restore: false });
+  openEditModal(store.getNode(selectedNodeId));
+});
 
 deleteNodeButton.addEventListener('click', async () => {
   const node = store.getNode(selectedNodeId);
   if (!node || node.nodeType === UNIVERSE_ROOT_NODE_TYPE) return;
   if (!confirm(`Delete “${node.title}” and all of its connected edges?`)) return;
+  if (isSearchlightActive()) dismissSearchlight({ restore: false });
   deleteNodeButton.disabled = true;
   try {
     await commitGraphMutation({
@@ -423,7 +595,10 @@ const openImportSummary = (parsed, filename) => {
   confirmImportButton.focus();
 };
 
-importButton.addEventListener('click', () => importFileInput.click());
+importButton.addEventListener('click', () => {
+  if (isSearchlightActive()) dismissSearchlight({ restore: true });
+  importFileInput.click();
+});
 
 importFileInput.addEventListener('change', async () => {
   const file = importFileInput.files?.[0];
@@ -477,12 +652,24 @@ confirmImportButton.addEventListener('click', async () => {
 });
 
 addEventListener('keydown', (event) => {
+  const target = event.target;
+  const editingText = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+  if (event.key === '/' && !editingText && !modal.classList.contains('visible') && !importModal.classList.contains('visible')) {
+    event.preventDefault();
+    searchlightInput.focus();
+    searchlightInput.select();
+    return;
+  }
   if (event.key !== 'Escape') return;
   if (importModal.classList.contains('visible')) {
     closeImportModal();
     setTransferStatus('Import cancelled');
   } else if (modal.classList.contains('visible')) {
     closeModal();
+  } else if (isSearchlightActive()) {
+    dismissSearchlight({ restore: true });
+  } else if (selectedNodeId) {
+    showNode(null);
   }
 });
 
