@@ -8,7 +8,7 @@ Preview environments validate an exact feature-branch commit without merging it,
 
 PUX-006 uses a manually dispatched GitHub Actions workflow:
 
-- Workflow: `.github/workflows/preview-pux006.yml`
+- Workflow: `.github/workflows/validate-pux006.yml` (manual dispatch preview job)
 - Required branch: `pux-006-validation-tests`
 - Target Worker: `prax-your-universe`
 - Default alias: `pux-006`
