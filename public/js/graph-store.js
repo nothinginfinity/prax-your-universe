@@ -266,15 +266,23 @@ export class GraphStore {
     return edge ? this.getNode(edge.fromNodeId) : null;
   }
 
-  listDirectChildren(nodeId) {
+  listChildren(nodeId) {
     return this.listEdges()
       .filter((edge) => edge.edgeType === PARENT_EDGE_TYPE && edge.fromNodeId === nodeId)
       .map((edge) => this.getNode(edge.toNodeId))
       .filter(Boolean);
   }
 
+  listDirectChildren(nodeId) {
+    return this.listChildren(nodeId);
+  }
+
+  getChildCount(nodeId) {
+    return this.listChildren(nodeId).length;
+  }
+
   getDirectChildCount(nodeId) {
-    return this.listDirectChildren(nodeId).length;
+    return this.getChildCount(nodeId);
   }
 
   listLayouts() {
