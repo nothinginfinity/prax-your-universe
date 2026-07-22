@@ -54,6 +54,8 @@ test('addChildWithHierarchy atomically creates child, root membership, and paren
   assert.equal(store.getParent(result.node.id).id, parent.id);
   assert.equal(store.getDefaultRootEdge(result.node.id).id, result.rootEdge.id);
   assert.equal(result.parentEdge.edgeType, PARENT_EDGE_TYPE);
+  assert.deepEqual(store.listChildren(parent.id).map(({ id }) => id), [result.node.id]);
+  assert.equal(store.getChildCount(parent.id), 1);
   assert.deepEqual(store.listDirectChildren(parent.id).map(({ id }) => id), [result.node.id]);
   assert.equal(store.getDirectChildCount(parent.id), 1);
 });
