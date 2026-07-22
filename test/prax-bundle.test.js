@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLayoutNodeRecord } from '../public/js/graph-schema.js';
+import { PRAX_SCHEMA_VERSION, createLayoutNodeRecord } from '../public/js/graph-schema.js';
 import { GraphStore, createSeedSnapshot } from '../public/js/graph-store.js';
 import {
   PRAX_BUNDLE_FORMAT,
@@ -50,7 +50,7 @@ test('PUX-005 exports a versioned complete Prax JSON bundle', () => {
   const result = createExport();
   assert.equal(result.bundle.format, PRAX_BUNDLE_FORMAT);
   assert.equal(result.bundle.bundleVersion, PRAX_BUNDLE_VERSION);
-  assert.equal(result.bundle.graphSchemaVersion, 1);
+  assert.equal(result.bundle.graphSchemaVersion, PRAX_SCHEMA_VERSION);
   assert.equal(result.bundle.graph.universes.length, 1);
   assert.equal(result.bundle.graph.nodes.some(({ nodeType }) => nodeType === 'universe_root'), true);
   assert.equal(result.bundle.graph.nodes.some(({ nodeType, url }) => nodeType === 'link' && url === 'https://example.com/round-trip'), true);
