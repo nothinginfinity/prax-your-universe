@@ -176,6 +176,33 @@ const edgeEndpoints = (scene, edgeId) => {
   return [...line.geometry.getAttribute('position').array];
 };
 
+const positionOf = (scene, nodeId) => {
+  const { x, y, z } = scene.meshByNodeId.get(nodeId).position;
+  return { x, y, z };
+};
+
+const distanceBetween = (left, right) => Math.hypot(
+  left.x - right.x,
+  left.y - right.y,
+  left.z - right.z
+);
+
+const assertRenderedEdgeMatchesMeshes = (scene, edge) => {
+  const from = positionOf(scene, edge.fromNodeId);
+  const to = positionOf(scene, edge.toNodeId);
+  assert.deepEqual(
+    edgeEndpoints(scene, edge.id),
+    [from.x, from.y, from.z, to.x, to.y, to.z].map(Math.fround)
+  );
+};
+
+const assertNoRendererCoordinates = (records) => {
+  const forbiddenKeys = ['position', 'positions', 'projectionPositions', 'renderCoordinates', 'sphere', 'grid', 'x', 'y', 'z'];
+  for (const record of records) {
+    for (const key of forbiddenKeys) assert.equal(Object.hasOwn(record, key), false, `${record.id} contains ${key}`);
+  }
+};
+
 test('projection geometry keeps the universe root central and calculates both layouts deterministically', () => {
   const store = new GraphStore();
   const nodes = store.listNodes();
@@ -197,6 +224,126 @@ test('edge segment calculations follow sphere and grid endpoint positions', () =
   assert.deepEqual(sphere.slice(3), Object.values(positions.get(edge.toNodeId).sphere));
   assert.deepEqual(grid.slice(0, 3), Object.values(positions.get(edge.fromNodeId).grid));
   assert.deepEqual(grid.slice(3), Object.values(positions.get(edge.toNodeId).grid));
+});
+
+test('hierarchy children stay near their immediate parent and parent edges follow both projections', () => {
+  const store = new GraphStore();
+  const parent = store.listNodes().find(({ nodeType }) => nodeType !== 'universe_root');
+  const childResult = store.addChildWithHierarchy(parent.id, {
+    originId: 'scene-direct-child',
+    nodeType: 'note',
+    title: 'Direct child',
+    body: 'Transient renderer placement'
+  });
+  const scene = new PraxScene({ style: {} }, () => {}, { three: THREE });
+  scene.camera = { position: new FakeVector3() };
+  scene.addNodes(store.listNodes());
+  const baseChildPosition = positionOf(scene, childResult.node.id);
+  scene.addEdges(store.listEdges());
+
+  const sphereParent = positionOf(scene, parent.id);
+  const sphereChild = positionOf(scene, childResult.node.id);
+  assert.notDeepEqual(sphereChild, baseChildPosition);
+  assert.ok(distanceBetween(sphereParent, sphereChild) > 0);
+  assert.ok(distanceBetween(sphereParent, sphereChild) < 2.6);
+  assertRenderedEdgeMatchesMeshes(scene, childResult.parentEdge);
+
+  const firstSpherePosition = positionOf(scene, childResult.node.id);
+  scene.layout({ resetCamera: false });
+  assert.deepEqual(positionOf(scene, childResult.node.id), firstSpherePosition);
+  assertRenderedEdgeMatchesMeshes(scene, childResult.parentEdge);
+
+  scene.setView('grid', { resetCamera: false });
+  const gridParent = positionOf(scene, parent.id);
+  const gridChild = positionOf(scene, childResult.node.id);
+  assert.ok(distanceBetween(gridParent, gridChild) > 0);
+  assert.ok(distanceBetween(gridParent, gridChild) < 2);
+  assertRenderedEdgeMatchesMeshes(scene, childResult.parentEdge);
+
+  scene.setView('sphere', { resetCamera: false });
+  assert.deepEqual(positionOf(scene, childResult.node.id), firstSpherePosition);
+  assertRenderedEdgeMatchesMeshes(scene, childResult.parentEdge);
+  assertNoRendererCoordinates([childResult.node, childResult.rootEdge, childResult.parentEdge]);
+  assert.equal(store.snapshot().layoutNodes.some(({ nodeId }) => nodeId === childResult.node.id), false);
+});
+
+test('hierarchy projection spreads siblings by stable IDs and processes nested children parent-first', () => {
+  const store = new GraphStore();
+  const parent = store.listNodes().find(({ nodeType }) => nodeType !== 'universe_root');
+  const children = ['zeta', 'alpha', 'middle'].map((originId) => store.addChildWithHierarchy(parent.id, {
+    originId: `scene-sibling-${originId}`,
+    nodeType: 'note',
+    title: originId,
+    body: ''
+  }).node);
+  const grandchild = store.addChildWithHierarchy(children[1].id, {
+    originId: 'scene-nested-grandchild',
+    nodeType: 'note',
+    title: 'Grandchild',
+    body: ''
+  }).node;
+  const nodes = store.listNodes();
+  const edges = store.listEdges();
+  const base = calculateProjectionPositions(nodes);
+  const first = calculateProjectionPositions(nodes, edges);
+  const reordered = calculateProjectionPositions(nodes, [...edges].reverse());
+  const childSpherePositions = children.map(({ id }) => first.positions.get(id).sphere);
+
+  assert.equal(new Set(childSpherePositions.map((position) => JSON.stringify(position))).size, children.length);
+  for (const child of children) {
+    assert.deepEqual(first.positions.get(child.id), reordered.positions.get(child.id));
+  }
+  assert.deepEqual(first.positions.get(grandchild.id), reordered.positions.get(grandchild.id));
+  assert.ok(distanceBetween(
+    first.positions.get(children[1].id).sphere,
+    first.positions.get(grandchild.id).sphere
+  ) < 2.6);
+  assert.ok(distanceBetween(
+    first.positions.get(children[1].id).grid,
+    first.positions.get(grandchild.id).grid
+  ) < 2);
+
+  const hierarchyIds = new Set([parent.id, ...children.map(({ id }) => id), grandchild.id]);
+  const unrelated = nodes.find(({ id, nodeType }) => nodeType !== 'universe_root' && !hierarchyIds.has(id));
+  assert.deepEqual(first.positions.get(unrelated.id), base.positions.get(unrelated.id));
+});
+
+test('full graph replacement reconstructs identical transient hierarchy placement without persisted coordinates', () => {
+  const store = new GraphStore();
+  const parent = store.listNodes().find(({ nodeType }) => nodeType !== 'universe_root');
+  const child = store.addChildWithHierarchy(parent.id, {
+    originId: 'scene-import-child',
+    nodeType: 'link',
+    title: 'Imported child',
+    url: 'https://example.com/imported-child'
+  }).node;
+  const grandchild = store.addChildWithHierarchy(child.id, {
+    originId: 'scene-import-grandchild',
+    nodeType: 'note',
+    title: 'Imported grandchild',
+    body: ''
+  }).node;
+  const canonicalSnapshot = store.snapshot();
+  const importedStore = new GraphStore(JSON.parse(JSON.stringify(canonicalSnapshot)));
+  const firstScene = new PraxScene({ style: {} }, () => {}, { three: THREE });
+  const secondScene = new PraxScene({ style: {} }, () => {}, { three: THREE });
+  firstScene.camera = { position: new FakeVector3() };
+  secondScene.camera = { position: new FakeVector3() };
+  firstScene.replaceGraph(store.listNodes(), store.listEdges());
+  secondScene.replaceGraph(importedStore.listNodes(), importedStore.listEdges());
+
+  for (const nodeId of [parent.id, child.id, grandchild.id]) {
+    assert.deepEqual(positionOf(secondScene, nodeId), positionOf(firstScene, nodeId));
+  }
+  firstScene.setView('grid', { resetCamera: false });
+  secondScene.setView('grid', { resetCamera: false });
+  for (const nodeId of [parent.id, child.id, grandchild.id]) {
+    assert.deepEqual(positionOf(secondScene, nodeId), positionOf(firstScene, nodeId));
+  }
+  assertNoRendererCoordinates([
+    ...canonicalSnapshot.nodes,
+    ...canonicalSnapshot.edges
+  ]);
 });
 
 test('node-type visual metadata is stable and distinguishes links, notes, and roots', () => {

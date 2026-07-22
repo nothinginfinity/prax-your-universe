@@ -1,4 +1,4 @@
-import { UNIVERSE_ROOT_NODE_TYPE } from './graph-schema.js';
+import { PARENT_EDGE_TYPE, UNIVERSE_ROOT_NODE_TYPE } from './graph-schema.js';
 import {
   captureCameraState,
   cloneCameraState,
@@ -14,6 +14,86 @@ import {
 const PROJECTION_TYPES = Object.freeze(['sphere', 'grid']);
 const TOUCH_TAP_MOVEMENT_PX = 14;
 const MOUSE_TAP_MOVEMENT_PX = 6;
+const HIERARCHY_CHILDREN_PER_RING = 8;
+const HIERARCHY_SPHERE_DISTANCE = 2.4;
+const HIERARCHY_GRID_DISTANCE = 1.8;
+
+const compareStableIds = (left, right) => {
+  const a = String(left);
+  const b = String(right);
+  return a < b ? -1 : (a > b ? 1 : 0);
+};
+
+const calculateHierarchyOffset = (index, total, view) => {
+  const ring = Math.floor(index / HIERARCHY_CHILDREN_PER_RING);
+  const ringStart = ring * HIERARCHY_CHILDREN_PER_RING;
+  const ringCount = Math.min(HIERARCHY_CHILDREN_PER_RING, Math.max(total - ringStart, 1));
+  const slot = index - ringStart;
+  const angle = ((Math.PI * 2 * slot) / ringCount) + ((ring % 2) * Math.PI / 8);
+  const baseDistance = view === 'sphere' ? HIERARCHY_SPHERE_DISTANCE : HIERARCHY_GRID_DISTANCE;
+  const ringSpacing = view === 'sphere' ? 0.65 : 0.55;
+  const distance = baseDistance + ring * ringSpacing;
+  return {
+    x: Math.cos(angle) * distance,
+    y: Math.sin(angle) * distance,
+    z: view === 'sphere' ? ((slot % 3) - 1) * 0.35 : 0
+  };
+};
+
+export const applyHierarchyProjectionPositions = (positions, nodes, edges = []) => {
+  const nodeIds = new Set(nodes.map(({ id }) => id));
+  const parentByChild = new Map();
+  const childrenByParent = new Map();
+  const hierarchyEdges = edges
+    .filter((edge) => (
+      edge.edgeType === PARENT_EDGE_TYPE
+      && nodeIds.has(edge.fromNodeId)
+      && nodeIds.has(edge.toNodeId)
+    ))
+    .sort((left, right) => (
+      compareStableIds(left.fromNodeId, right.fromNodeId)
+      || compareStableIds(left.toNodeId, right.toNodeId)
+      || compareStableIds(left.id ?? '', right.id ?? '')
+    ));
+
+  for (const edge of hierarchyEdges) {
+    if (parentByChild.has(edge.toNodeId)) continue;
+    parentByChild.set(edge.toNodeId, edge.fromNodeId);
+    const children = childrenByParent.get(edge.fromNodeId) ?? [];
+    children.push(edge.toNodeId);
+    childrenByParent.set(edge.fromNodeId, children);
+  }
+  for (const children of childrenByParent.values()) children.sort(compareStableIds);
+
+  const visited = new Set();
+  const placeChildren = (parentId) => {
+    if (visited.has(parentId)) return;
+    visited.add(parentId);
+    const parentPosition = positions.get(parentId);
+    const children = childrenByParent.get(parentId) ?? [];
+    if (!parentPosition) return;
+    children.forEach((childId, index) => {
+      const childPosition = positions.get(childId);
+      if (!childPosition) return;
+      for (const view of PROJECTION_TYPES) {
+        const offset = calculateHierarchyOffset(index, children.length, view);
+        childPosition[view] = {
+          x: parentPosition[view].x + offset.x,
+          y: parentPosition[view].y + offset.y,
+          z: parentPosition[view].z + offset.z
+        };
+      }
+      placeChildren(childId);
+    });
+  };
+
+  const hierarchyRoots = [...childrenByParent.keys()]
+    .filter((parentId) => !parentByChild.has(parentId))
+    .sort(compareStableIds);
+  hierarchyRoots.forEach(placeChildren);
+  [...childrenByParent.keys()].sort(compareStableIds).forEach(placeChildren);
+  return positions;
+};
 
 export const NODE_TYPE_VISUAL_METADATA = Object.freeze({
   universe_root: Object.freeze({ label: 'Universe root', color: 0xffffff, radius: 0.8, emissiveIntensity: 0.65 }),
@@ -28,7 +108,7 @@ export const NODE_TYPE_VISUAL_METADATA = Object.freeze({
 export const getNodeVisualMetadata = (nodeType) => NODE_TYPE_VISUAL_METADATA[nodeType]
   ?? Object.freeze({ label: 'Node', color: 0x94a3b8, radius: 0.44, emissiveIntensity: 0.25 });
 
-export const calculateProjectionPositions = (nodes) => {
+export const calculateProjectionPositions = (nodes, edges = []) => {
   const positions = new Map();
   const root = nodes.find(({ nodeType }) => nodeType === UNIVERSE_ROOT_NODE_TYPE) ?? null;
   const regularNodes = nodes.filter(({ nodeType }) => nodeType !== UNIVERSE_ROOT_NODE_TYPE);
@@ -63,6 +143,7 @@ export const calculateProjectionPositions = (nodes) => {
     });
   });
 
+  applyHierarchyProjectionPositions(positions, nodes, edges);
   return Object.freeze({ positions, radius });
 };
 
@@ -238,12 +319,16 @@ export class PraxScene {
   }
 
   addEdges(edges) {
+    let hierarchyChanged = false;
     for (const edge of edges) {
       if (!this.meshByNodeId.has(edge.fromNodeId) || !this.meshByNodeId.has(edge.toNodeId)) {
         throw new Error(`Cannot render edge ${edge.id} before both endpoint nodes exist.`);
       }
       const existing = this.edgeObjectById.get(edge.id);
       if (existing) {
+        hierarchyChanged = hierarchyChanged
+          || existing.userData.edgeType === PARENT_EDGE_TYPE
+          || edge.edgeType === PARENT_EDGE_TYPE;
         existing.userData.edgeType = edge.edgeType;
         existing.userData.fromNodeId = edge.fromNodeId;
         existing.userData.toNodeId = edge.toNodeId;
@@ -252,8 +337,10 @@ export class PraxScene {
       const line = this.createEdgeObject(edge);
       this.edgeObjectById.set(edge.id, line);
       this.edgeGroup.add(line);
+      hierarchyChanged = hierarchyChanged || edge.edgeType === PARENT_EDGE_TYPE;
     }
-    this.syncEdgePositions();
+    if (hierarchyChanged) this.layout({ resetCamera: false });
+    else this.syncEdgePositions();
   }
 
   removeEdge(edgeId) {
@@ -293,7 +380,13 @@ export class PraxScene {
       id: point.userData.nodeId,
       nodeType: point.userData.nodeType
     }));
-    const { positions, radius } = calculateProjectionPositions(nodeDescriptors);
+    const edgeDescriptors = [...this.edgeObjectById.values()].map((line) => ({
+      id: line.userData.edgeId,
+      edgeType: line.userData.edgeType,
+      fromNodeId: line.userData.fromNodeId,
+      toNodeId: line.userData.toNodeId
+    }));
+    const { positions, radius } = calculateProjectionPositions(nodeDescriptors, edgeDescriptors);
     this.projectionPositions = positions;
     this.layoutRadius = radius;
     for (const point of this.pointsGroup.children) {
