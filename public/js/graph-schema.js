@@ -1,4 +1,4 @@
-export const PRAX_SCHEMA_VERSION = 1;
+export const PRAX_SCHEMA_VERSION = 2;
 
 export const NODE_TYPES = Object.freeze([
   'universe',
@@ -15,13 +15,15 @@ export const EDGE_TYPES = Object.freeze([
   'references',
   'belongs_to',
   'related_to',
-  'created_from'
+  'created_from',
+  'parent_of'
 ]);
 
 export const LAYOUT_TYPES = Object.freeze(['sphere', 'grid', 'custom']);
 export const PROVENANCE_SOURCE_TYPES = Object.freeze(['system', 'user', 'import']);
 export const UNIVERSE_ROOT_NODE_TYPE = 'universe_root';
 export const DEFAULT_ROOT_EDGE_TYPE = 'contains';
+export const PARENT_EDGE_TYPE = 'parent_of';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/;
 const FNV_OFFSET = 0xcbf29ce484222325n;
@@ -217,7 +219,7 @@ export const createEdgeRecord = (input = {}, options = {}) => {
   if (!EDGE_TYPES.includes(edgeType)) fail('edge.edgeType is unsupported.', 'edge.edgeType', 'enum');
   const fromNodeId = validateId(input.fromNodeId, 'edge.fromNodeId');
   const toNodeId = validateId(input.toNodeId, 'edge.toNodeId');
-  if (fromNodeId === toNodeId) fail('Self-referential edges are not allowed in schema version 1.', 'edge.toNodeId', 'self_edge');
+  if (fromNodeId === toNodeId) fail('Self-referential edges are not allowed.', 'edge.toNodeId', 'self_edge');
   const identity = normalizeIdentity({
     id: input.id,
     originId: input.originId ?? `${edgeType}:${fromNodeId}:${toNodeId}`,
@@ -405,6 +407,54 @@ const validateUniverseRootTopology = (normalized, { requireUniverseRoots = false
   });
 };
 
+const validateHierarchyTopology = (normalized) => {
+  const nodeById = new Map(normalized.nodes.map((node) => [node.id, node]));
+  const incomingParentByChild = new Map();
+  const relationshipKeys = new Set();
+
+  normalized.edges.forEach((edge, index) => {
+    if (edge.edgeType !== PARENT_EDGE_TYPE) return;
+    const parent = nodeById.get(edge.fromNodeId);
+    const child = nodeById.get(edge.toNodeId);
+    if (parent?.nodeType === UNIVERSE_ROOT_NODE_TYPE || child?.nodeType === UNIVERSE_ROOT_NODE_TYPE) {
+      fail(
+        'Universe roots cannot be hierarchy parents or children.',
+        `snapshot.edges[${index}]`,
+        'invalid_hierarchy_endpoint'
+      );
+    }
+    const relationshipKey = `${edge.fromNodeId}\u001f${edge.toNodeId}`;
+    if (relationshipKeys.has(relationshipKey)) {
+      fail(
+        'A parent/child relationship may appear only once.',
+        `snapshot.edges[${index}]`,
+        'duplicate_parent_edge'
+      );
+    }
+    relationshipKeys.add(relationshipKey);
+    if (incomingParentByChild.has(edge.toNodeId)) {
+      fail(
+        'A node may have at most one incoming parent_of edge.',
+        `snapshot.edges[${index}]`,
+        'multiple_parents'
+      );
+    }
+    incomingParentByChild.set(edge.toNodeId, edge.fromNodeId);
+  });
+
+  for (const childId of incomingParentByChild.keys()) {
+    const visited = new Set([childId]);
+    let cursor = childId;
+    while (incomingParentByChild.has(cursor)) {
+      cursor = incomingParentByChild.get(cursor);
+      if (visited.has(cursor)) {
+        fail('Hierarchy parent_of edges must be acyclic.', 'snapshot.edges', 'hierarchy_cycle');
+      }
+      visited.add(cursor);
+    }
+  }
+};
+
 export const validateGraphSnapshot = (input = {}, options = {}) => {
   requireObject(input, 'snapshot');
   const collections = {
@@ -461,5 +511,6 @@ export const validateGraphSnapshot = (input = {}, options = {}) => {
   normalized.settings.forEach((record, index) => assertUniverse(record, `snapshot.settings[${index}]`));
 
   validateUniverseRootTopology(normalized, options);
+  validateHierarchyTopology(normalized);
   return deepFreeze(normalized);
 };
