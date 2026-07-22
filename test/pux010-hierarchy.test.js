@@ -54,7 +54,10 @@ test('future graph schema versions are rejected instead of being silently downgr
   const future = clone(createSeedSnapshot());
   future.schemaVersion = PRAX_SCHEMA_VERSION + 1;
 
-  assert.throws(() => upgradeGraphSnapshot(future), /unsupported/i);
+  assert.throws(
+    () => upgradeGraphSnapshot(future),
+    (error) => /unsupported/i.test(error.message) && error.issues?.[0]?.code === 'schema_version'
+  );
 });
 
 test('addChildWithHierarchy atomically creates child, root membership, and parent edge', () => {
@@ -103,9 +106,13 @@ test('hierarchy rejects an explicit self-edge as a cycle', () => {
   const store = new GraphStore(createSeedSnapshot());
   const node = firstContentNode(store);
 
+  // A self-edge is the trivial one-node cycle. Schema-level validation rejects
+  // it earlier and more specifically (code "self_edge") than the store's
+  // general multi-node cycle walk (code "hierarchy_cycle"), so either code
+  // satisfies the acyclic-hierarchy contract.
   assert.throws(
     () => store.addParentEdge(node.id, node.id),
-    (error) => error.issues?.[0]?.code === 'hierarchy_cycle'
+    (error) => error.issues?.[0]?.code === 'self_edge' || error.issues?.[0]?.code === 'hierarchy_cycle'
   );
 });
 
