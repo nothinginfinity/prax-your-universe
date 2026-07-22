@@ -159,7 +159,7 @@ jobs:
           ## PUX-009 automated preview verification
 
           - Preview URL: $PREVIEW_URL
-          - Worker version ID: `$VERSION_ID`
+          - Worker version ID: $VERSION_ID
           - Desktop 1440 × 900 at DPR 1: **passed**
           - iPhone 390 × 844 at DPR 3: **passed**
           - Complete Node test suite and syntax/Wrangler checks: **passed**
