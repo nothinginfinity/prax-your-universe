@@ -15,7 +15,7 @@ import { GalaxyFocusController } from './galaxy-focus-controller.js';
 import { getNodeVisualMetadata } from './scene.js';
 import { SearchlightSession } from './searchlight.js';
 
-const APP_VERSION = '0.2.0-pux.8.1';
+const APP_VERSION = '0.2.0-pux.9';
 
 const infoPanel = document.querySelector('#info-panel');
 const infoTitle = document.querySelector('#info-title');
@@ -424,7 +424,7 @@ const replaceUniverse = async (snapshot) => {
 };
 
 const testMilestone = new URLSearchParams(location.search).get('puxTest');
-if (['003', '004', '005', '006', '007', '008'].includes(testMilestone)) {
+if (['003', '004', '005', '006', '007', '008', '009'].includes(testMilestone)) {
   Object.defineProperty(globalThis, '__PRAX_TEST__', {
     configurable: false,
     enumerable: false,
@@ -432,6 +432,7 @@ if (['003', '004', '005', '006', '007', '008'].includes(testMilestone)) {
     value: Object.freeze({
       getState: getPuxVerificationState,
       getNodeScreenPosition: (nodeId) => scene.getNodeScreenPosition(nodeId),
+      getNodeScreenMetrics: (nodeId, pointerType = 'touch') => scene.getNodeScreenMetrics(nodeId, pointerType),
       selectNode: (nodeId) => {
         const node = store.getNode(nodeId);
         handleSceneSelection(node?.id ?? null);
