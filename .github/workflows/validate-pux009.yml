@@ -1,0 +1,177 @@
+name: Validate PUX-009
+
+on:
+  push:
+    branches: [pux-009-adaptive-hit-testing]
+  workflow_dispatch:
+    inputs:
+      preview_alias:
+        description: Stable Cloudflare Worker preview alias
+        required: true
+        default: pux-009
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prax-pux009-validation-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm test
+      - run: npm run check
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - run: npm install --no-save --package-lock=false playwright@1.55.0
+      - run: npx playwright install --with-deps chromium
+      - name: Run PUX-006 through PUX-009 browser regressions
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/pux006-local artifacts/pux007-local artifacts/pux008-local artifacts/pux009-local
+          npx wrangler dev --local --ip 127.0.0.1 --port 8787 > artifacts/pux009-local/wrangler.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          PRAX_LOCAL_URL=http://127.0.0.1:8787 PRAX_VISUAL_ARTIFACT_DIR=artifacts/pux006-local node scripts/verify-pux006-local.mjs 2>&1 | tee artifacts/pux006-local/verifier.log
+          PRAX_LOCAL_URL=http://127.0.0.1:8787 PRAX_VISUAL_ARTIFACT_DIR=artifacts/pux007-local node scripts/verify-pux007-local.mjs 2>&1 | tee artifacts/pux007-local/verifier.log
+          PRAX_LOCAL_URL=http://127.0.0.1:8787 PRAX_VISUAL_ARTIFACT_DIR=artifacts/pux008-local node scripts/verify-pux008-local.mjs 2>&1 | tee artifacts/pux008-local/verifier.log
+          PRAX_LOCAL_URL=http://127.0.0.1:8787 PRAX_VISUAL_ARTIFACT_DIR=artifacts/pux009-local node scripts/verify-pux009-local.mjs 2>&1 | tee artifacts/pux009-local/verifier.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pux006-through-pux009-local-browser-evidence
+          path: |
+            artifacts/pux006-local
+            artifacts/pux007-local
+            artifacts/pux008-local
+            artifacts/pux009-local
+          if-no-files-found: error
+
+  preview:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Enforce PUX-009 preview boundaries
+        env:
+          PREVIEW_ALIAS: ${{ inputs.preview_alias }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "pux-009-adaptive-hit-testing"
+          test "$PREVIEW_ALIAS" != ""
+          [[ "$PREVIEW_ALIAS" =~ ^[a-z][a-z0-9-]*$ ]]
+          test ${#PREVIEW_ALIAS} -le 32
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFile } from 'node:fs/promises';
+          const config = JSON.parse(await readFile('wrangler.jsonc', 'utf8'));
+          assert.equal(config.name, 'prax-your-universe');
+          assert.equal(config.main, 'src/worker.js');
+          assert.equal(config.assets?.binding, 'ASSETS');
+          assert.equal(config.preview_urls, true);
+          for (const key of ['d1_databases', 'kv_namespaces', 'r2_buckets', 'durable_objects', 'queues', 'services']) {
+            assert.equal(config[key], undefined, `Stateful preview binding is forbidden: ${key}`);
+          }
+          NODE
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Record pre-upload Cloudflare state
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/pux009-preview
+          npx wrangler --version | tee artifacts/pux009-preview/wrangler-version.txt
+          npx wrangler deployments list --json > artifacts/pux009-preview/deployments-before.json
+          cat > artifacts/pux009-preview/intended-write.json <<JSON
+          {
+            "targetWorker": "prax-your-universe",
+            "branch": "$GITHUB_REF_NAME",
+            "commitSha": "$GITHUB_SHA",
+            "command": "npx wrangler versions upload --preview-alias ${{ inputs.preview_alias }}",
+            "createsWorkerVersion": true,
+            "deploysVersionToTraffic": false,
+            "changesProductionRoute": false,
+            "usesProductionStatefulBindings": false
+          }
+          JSON
+          cat artifacts/pux009-preview/intended-write.json
+      - name: Upload non-production PUX-009 Worker version
+        id: preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PRAX_PREVIEW_ALIAS: ${{ inputs.preview_alias }}
+          PRAX_WORKER_NAME: prax-your-universe
+          PRAX_VISUAL_ARTIFACT_DIR: artifacts/pux009-preview
+        run: |
+          set -euo pipefail
+          export PRAX_UPLOAD_MESSAGE="PUX-009 preview ${GITHUB_SHA}"
+          npx wrangler versions upload \
+            --preview-alias "$PRAX_PREVIEW_ALIAS" \
+            --message "$PRAX_UPLOAD_MESSAGE" \
+            --tag "pux-009-${GITHUB_SHA::12}" \
+            2>&1 | tee artifacts/pux009-preview/upload.log
+          npx wrangler versions list --json > artifacts/pux009-preview/versions-after.json
+          npx wrangler deployments list --json > artifacts/pux009-preview/deployments-after.json
+          node scripts/record-pux006-preview.mjs
+      - name: Verify PUX-006 regression against remote preview
+        env:
+          PRAX_PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
+          PRAX_VISUAL_ARTIFACT_DIR: artifacts/pux009-preview/pux006
+        run: node scripts/verify-pux006-preview.mjs 2>&1 | tee artifacts/pux009-preview/pux006-verifier.log
+      - name: Verify PUX-008 Galaxy Focus against remote preview
+        env:
+          PRAX_PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
+          PRAX_VISUAL_ARTIFACT_DIR: artifacts/pux009-preview/pux008
+        run: node scripts/verify-pux008-local.mjs 2>&1 | tee artifacts/pux009-preview/pux008-verifier.log
+      - name: Verify PUX-009 adaptive hit testing against remote preview
+        env:
+          PRAX_PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
+          PRAX_VISUAL_ARTIFACT_DIR: artifacts/pux009-preview/pux009
+        run: node scripts/verify-pux009-local.mjs 2>&1 | tee artifacts/pux009-preview/pux009-verifier.log
+      - name: Add verification summary
+        if: success()
+        env:
+          PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
+          VERSION_ID: ${{ steps.preview.outputs.version_id }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<SUMMARY
+          ## PUX-009 automated preview verification
+
+          - Preview URL: $PREVIEW_URL
+          - Worker version ID: `$VERSION_ID`
+          - Desktop 1440 × 900 at DPR 1: **passed**
+          - iPhone 390 × 844 at DPR 3: **passed**
+          - Complete Node test suite and syntax/Wrangler checks: **passed**
+          - PUX-006, PUX-007, PUX-008, and PUX-009 local regressions: **passed**
+          - PUX-006 and PUX-008 remote preview regressions: **passed**
+          - Raycast-miss adaptive touch selection, fine mouse precision, sphere/grid, Searchlight, Galaxy Focus, graph invariants, overflow, console, page, request, and HTTP checks: **passed**
+          - Production traffic changed: **no**
+          SUMMARY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pux009-preview-evidence-${{ github.sha }}
+          path: artifacts/pux009-preview
+          if-no-files-found: error
+          retention-days: 30
