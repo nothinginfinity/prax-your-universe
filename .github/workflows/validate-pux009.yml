@@ -35,6 +35,7 @@ jobs:
       - run: npm install --no-save --package-lock=false playwright@1.55.0
       - run: npx playwright install --with-deps chromium
       - name: Run PUX-006 through PUX-009 browser regressions
+        id: browser_regressions
         run: |
           set -euo pipefail
           mkdir -p artifacts/pux006-local artifacts/pux007-local artifacts/pux008-local artifacts/pux009-local
@@ -46,7 +47,7 @@ jobs:
           PRAX_LOCAL_URL=http://127.0.0.1:8787 PRAX_VISUAL_ARTIFACT_DIR=artifacts/pux008-local node scripts/verify-pux008-local.mjs 2>&1 | tee artifacts/pux008-local/verifier.log
           PRAX_LOCAL_URL=http://127.0.0.1:8787 PRAX_VISUAL_ARTIFACT_DIR=artifacts/pux009-local node scripts/verify-pux009-local.mjs 2>&1 | tee artifacts/pux009-local/verifier.log
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ always() && steps.browser_regressions.outcome != 'skipped' }}
         with:
           name: pux006-through-pux009-local-browser-evidence
           path: |
