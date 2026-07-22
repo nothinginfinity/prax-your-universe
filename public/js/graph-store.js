@@ -1,6 +1,7 @@
 import {
   DEFAULT_ROOT_EDGE_TYPE,
   GraphValidationError,
+  PARENT_EDGE_TYPE,
   PRAX_SCHEMA_VERSION,
   UNIVERSE_ROOT_NODE_TYPE,
   createEdgeRecord,
@@ -25,8 +26,28 @@ const ROOT_EDGE_PROVENANCE = Object.freeze({
   sourceId: 'prax-default-root-edge-v1',
   createdBy: 'prax'
 });
+const GRAPH_COLLECTION_NAMES = Object.freeze(['universes', 'nodes', 'edges', 'layouts', 'layoutNodes', 'settings']);
+const LEGACY_SCHEMA_VERSION = 1;
 
 const graphIssue = (message, path, code) => new GraphValidationError(message, [{ path, code, message }]);
+
+export const migrateGraphSnapshotToCurrent = (snapshot = {}) => {
+  const sourceVersion = snapshot.schemaVersion ?? LEGACY_SCHEMA_VERSION;
+  if (sourceVersion === PRAX_SCHEMA_VERSION) {
+    return Object.freeze({ changed: false, snapshot });
+  }
+  if (sourceVersion !== LEGACY_SCHEMA_VERSION) {
+    throw graphIssue(`Graph schema version ${sourceVersion} is unsupported.`, 'snapshot.schemaVersion', 'schema_version');
+  }
+  const migrated = { ...snapshot, schemaVersion: PRAX_SCHEMA_VERSION };
+  for (const collectionName of GRAPH_COLLECTION_NAMES) {
+    migrated[collectionName] = (snapshot[collectionName] ?? []).map((record) => ({
+      ...record,
+      schemaVersion: PRAX_SCHEMA_VERSION
+    }));
+  }
+  return Object.freeze({ changed: true, snapshot: migrated });
+};
 
 export const createUniverseRootRecord = (universe) => createNodeRecord({
   universeId: universe.id,
@@ -49,11 +70,26 @@ export const createDefaultRootEdgeRecord = (root, node) => createEdgeRecord({
   provenance: ROOT_EDGE_PROVENANCE
 });
 
+export const createParentEdgeRecord = (parent, child, provenance = {}) => createEdgeRecord({
+  universeId: child.universeId,
+  edgeType: PARENT_EDGE_TYPE,
+  fromNodeId: parent.id,
+  toNodeId: child.id,
+  createdAt: child.createdAt,
+  updatedAt: child.updatedAt,
+  provenance: {
+    sourceType: 'user',
+    sourceId: provenance.sourceId ?? 'local-add-child',
+    createdBy: provenance.createdBy ?? 'local-user'
+  }
+});
+
 export const upgradeGraphSnapshot = (snapshot) => {
-  const normalized = validateGraphSnapshot(snapshot);
+  const migration = migrateGraphSnapshotToCurrent(snapshot);
+  const normalized = validateGraphSnapshot(migration.snapshot);
   const nodes = [...normalized.nodes];
   const edges = [...normalized.edges];
-  let changed = false;
+  let changed = migration.changed;
 
   for (const universe of normalized.universes) {
     let root = nodes.find((node) => (
@@ -221,6 +257,26 @@ export class GraphStore {
     )) ?? null;
   }
 
+  getParentEdge(nodeId) {
+    return this.listEdges().find((edge) => edge.edgeType === PARENT_EDGE_TYPE && edge.toNodeId === nodeId) ?? null;
+  }
+
+  getParent(nodeId) {
+    const edge = this.getParentEdge(nodeId);
+    return edge ? this.getNode(edge.fromNodeId) : null;
+  }
+
+  listDirectChildren(nodeId) {
+    return this.listEdges()
+      .filter((edge) => edge.edgeType === PARENT_EDGE_TYPE && edge.fromNodeId === nodeId)
+      .map((edge) => this.getNode(edge.toNodeId))
+      .filter(Boolean);
+  }
+
+  getDirectChildCount(nodeId) {
+    return this.listDirectChildren(nodeId).length;
+  }
+
   listLayouts() {
     return [...this.layouts.values()];
   }
@@ -296,6 +352,25 @@ export class GraphStore {
       const edge = this.ensureDefaultRootEdge(node.id);
       this.snapshot();
       return Object.freeze({ node, edge });
+    } catch (error) {
+      this.replaceSnapshot(previousSnapshot);
+      throw error;
+    }
+  }
+
+  addChildWithHierarchy(parentId, input) {
+    const previousSnapshot = this.snapshot();
+    try {
+      const parent = this.getNode(parentId);
+      if (!parent) throw graphIssue(`Parent node ${parentId} does not exist.`, 'parentId', 'missing_reference');
+      if (parent.nodeType === UNIVERSE_ROOT_NODE_TYPE) {
+        throw graphIssue('Universe roots cannot participate in hierarchy.', 'parentId', 'invalid_hierarchy_endpoint');
+      }
+      const node = this.addNode({ ...input, universeId: parent.universeId });
+      const rootEdge = this.ensureDefaultRootEdge(node.id);
+      const parentEdge = this.addParentEdge(parent.id, node.id, input?.provenance);
+      this.snapshot();
+      return Object.freeze({ parent, node, rootEdge, parentEdge });
     } catch (error) {
       this.replaceSnapshot(previousSnapshot);
       throw error;
@@ -380,6 +455,7 @@ export class GraphStore {
       if (node.nodeType === UNIVERSE_ROOT_NODE_TYPE) {
         throw graphIssue('Universe roots cannot be deleted.', 'node.nodeType', 'managed_root');
       }
+      const promotedChildren = this.listDirectChildren(nodeId);
       const edges = this.listConnectedEdges(nodeId);
       const layoutNodes = this.listLayoutNodes().filter((record) => record.nodeId === nodeId);
       edges.forEach(({ id }) => this.edges.delete(id));
@@ -389,12 +465,42 @@ export class GraphStore {
       return Object.freeze({
         node,
         edges: Object.freeze([...edges]),
-        layoutNodes: Object.freeze([...layoutNodes])
+        layoutNodes: Object.freeze([...layoutNodes]),
+        promotedChildren: Object.freeze([...promotedChildren])
       });
     } catch (error) {
       this.replaceSnapshot(previousSnapshot);
       throw error;
     }
+  }
+
+  assertParentEdgeCandidate(edge, parent, child) {
+    if (parent.nodeType === UNIVERSE_ROOT_NODE_TYPE || child.nodeType === UNIVERSE_ROOT_NODE_TYPE) {
+      throw graphIssue('Universe roots cannot participate in hierarchy.', 'edge', 'invalid_hierarchy_endpoint');
+    }
+    const duplicate = this.listEdges().find((record) => (
+      record.edgeType === PARENT_EDGE_TYPE
+      && record.fromNodeId === edge.fromNodeId
+      && record.toNodeId === edge.toNodeId
+    ));
+    if (duplicate) throw graphIssue('This parent/child relationship already exists.', 'edge', 'duplicate_parent_edge');
+    if (this.getParentEdge(child.id)) {
+      throw graphIssue('A node may have at most one parent.', 'edge.toNodeId', 'multiple_parents');
+    }
+    const visited = new Set([child.id]);
+    let cursor = parent.id;
+    while (cursor) {
+      if (visited.has(cursor)) throw graphIssue('Hierarchy edges must be acyclic.', 'edge', 'hierarchy_cycle');
+      visited.add(cursor);
+      cursor = this.getParentEdge(cursor)?.fromNodeId ?? null;
+    }
+  }
+
+  addParentEdge(parentId, childId, provenance = {}) {
+    const parent = this.getNode(parentId);
+    const child = this.getNode(childId);
+    if (!parent || !child) throw graphIssue('Parent and child nodes must exist.', 'edge', 'missing_reference');
+    return this.addEdge(createParentEdgeRecord(parent, child, provenance));
   }
 
   addEdge(input) {
@@ -404,6 +510,7 @@ export class GraphStore {
     if (!fromNode || !toNode || fromNode.universeId !== edge.universeId || toNode.universeId !== edge.universeId) {
       throw graphIssue('Edge endpoints must exist in the same universe.', 'edge', 'missing_reference');
     }
+    if (edge.edgeType === PARENT_EDGE_TYPE) this.assertParentEdgeCandidate(edge, fromNode, toNode);
     if (this.edges.has(edge.id)) {
       throw graphIssue(`Edge ${edge.id} already exists.`, 'edge.id', 'duplicate_id');
     }
