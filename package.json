@@ -7,12 +7,13 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "test": "node --test",
-    "check:js": "node --check public/js/adaptive-hit-testing.js && node --check public/js/camera-navigation.js && node --check public/js/graph-navigation.js && node --check public/js/searchlight.js && node --check public/js/galaxy-focus.js && node --check public/js/galaxy-scene.js && node --check public/js/galaxy-focus-controller.js && node --check public/js/graph-schema.js && node --check public/js/graph-store.js && node --check public/js/graph-mutations.js && node --check public/js/indexeddb-repository.js && node --check public/js/prax-bundle.js && node --check public/js/scene.js && node --check public/js/app.js && node --check scripts/verify-pux003-live.mjs && node --check scripts/verify-pux004-live.mjs && node --check scripts/verify-pux005-live.mjs && node --check scripts/verify-pux006-local.mjs && node --check scripts/verify-pux007-local.mjs && node --check scripts/verify-pux008-local.mjs && node --check scripts/verify-pux006-preview.mjs && node --check scripts/record-pux006-preview.mjs && node --check src/worker.js",
+    "check:js": "node --check public/js/adaptive-hit-testing.js && node --check public/js/camera-navigation.js && node --check public/js/graph-navigation.js && node --check public/js/searchlight.js && node --check public/js/galaxy-focus.js && node --check public/js/galaxy-scene.js && node --check public/js/galaxy-focus-controller.js && node --check public/js/graph-schema.js && node --check public/js/graph-store.js && node --check public/js/graph-mutations.js && node --check public/js/indexeddb-repository.js && node --check public/js/prax-bundle.js && node --check public/js/scene.js && node --check public/js/app.js && node --check scripts/verify-pux003-live.mjs && node --check scripts/verify-pux004-live.mjs && node --check scripts/verify-pux005-live.mjs && node --check scripts/verify-pux006-local.mjs && node --check scripts/verify-pux007-local.mjs && node --check scripts/verify-pux008-local.mjs && node --check scripts/verify-pux009-local.mjs && node --check scripts/verify-pux006-preview.mjs && node --check scripts/record-pux006-preview.mjs && node --check src/worker.js",
     "check": "npm run check:js && wrangler deploy --dry-run",
     "validate": "npm test && npm run check",
     "verify:pux006:preview": "node scripts/verify-pux006-preview.mjs",
     "verify:pux007:local": "node scripts/verify-pux007-local.mjs",
-    "verify:pux008:local": "node scripts/verify-pux008-local.mjs"
+    "verify:pux008:local": "node scripts/verify-pux008-local.mjs",
+    "verify:pux009:local": "node scripts/verify-pux009-local.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.26.0"
