@@ -56,6 +56,7 @@ const findRaycastMissAdaptivePoint = (page) => page.evaluate(() => {
       const x = target.x + dx * radius;
       const y = target.y + dy * radius;
       if (x < 8 || x > innerWidth - 8 || y < 8 || y > innerHeight - 8) continue;
+      if (document.elementFromPoint(x, y) !== document.querySelector('#main-canvas')) continue;
       const candidates = [];
       let raycastMiss = true;
       for (const candidate of metrics) {
