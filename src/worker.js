@@ -11,8 +11,8 @@ export default {
       return json({
         ok: true,
         app: 'prax-your-universe',
-        version: '0.2.0-pux.8',
-        milestone: 'PUX-008',
+        version: '0.2.0-pux.9',
+        milestone: 'PUX-009',
         graph_schema_version: 1,
         indexeddb_database_version: 1,
         prax_bundle_version: 1,
@@ -22,6 +22,8 @@ export default {
         searchlight: true,
         exact_local_search: ['title', 'body', 'url', 'nodeType'],
         shared_navigation_foundation: true,
+        adaptive_node_hit_testing: true,
+        pointer_hit_policy: 'raycast-first-css-space-adaptive-fallback',
         import_behavior: 'replace-only',
         public_mutation_api: false,
         semantic_index: 'not-configured'
