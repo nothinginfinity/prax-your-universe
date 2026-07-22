@@ -43,9 +43,9 @@ const createRoot = (overrides = {}) => createNodeRecord({
 
 test('schema exports the planned node and edge types including a dedicated universe root', () => {
   assert.deepEqual(NODE_TYPES, ['universe', 'universe_root', 'link', 'note', 'project', 'document', 'conversation']);
-  assert.deepEqual(EDGE_TYPES, ['contains', 'references', 'belongs_to', 'related_to', 'created_from']);
+  assert.deepEqual(EDGE_TYPES, ['contains', 'references', 'belongs_to', 'related_to', 'created_from', 'parent_of']);
   assert.equal(DEFAULT_ROOT_EDGE_TYPE, 'contains');
-  assert.equal(PRAX_SCHEMA_VERSION, 1);
+  assert.equal(PRAX_SCHEMA_VERSION, 2);
 });
 
 test('node identity is stable when mutable content changes', () => {
@@ -118,7 +118,7 @@ test('snapshot validation rejects edges with missing endpoints', () => {
   }, { now: NOW });
   assert.throws(
     () => validateGraphSnapshot({
-      schemaVersion: 1,
+      schemaVersion: PRAX_SCHEMA_VERSION,
       universes: [universe],
       nodes: [node],
       edges: [edge],
@@ -134,7 +134,7 @@ test('graph validation rejects non-deterministic universe roots', () => {
   const root = createRoot({ id: 'node:wrong-root-id' });
   assert.throws(
     () => validateGraphSnapshot({
-      schemaVersion: 1,
+      schemaVersion: PRAX_SCHEMA_VERSION,
       universes: [universe],
       nodes: [root],
       edges: [],
@@ -151,7 +151,7 @@ test('graph validation rejects duplicate roots and invalid root edge directions'
   const duplicateRoot = createRoot({ id: root.id.replace(/.$/, '0') });
   assert.throws(
     () => validateGraphSnapshot({
-      schemaVersion: 1,
+      schemaVersion: PRAX_SCHEMA_VERSION,
       universes: [universe],
       nodes: [root, duplicateRoot],
       edges: [],
@@ -172,7 +172,7 @@ test('graph validation rejects duplicate roots and invalid root edge directions'
   }, { now: NOW });
   assert.throws(
     () => validateGraphSnapshot({
-      schemaVersion: 1,
+      schemaVersion: PRAX_SCHEMA_VERSION,
       universes: [universe],
       nodes: [root, node],
       edges: [invalidEdge],
@@ -189,7 +189,7 @@ test('strict graph validation requires one root contains edge for every non-root
   const node = createNodeRecord(nodeInput(), { now: NOW });
   assert.throws(
     () => validateGraphSnapshot({
-      schemaVersion: 1,
+      schemaVersion: PRAX_SCHEMA_VERSION,
       universes: [universe],
       nodes: [root, node],
       edges: [],
@@ -208,7 +208,7 @@ test('strict graph validation requires one root contains edge for every non-root
     provenance: systemProvenance
   }, { now: NOW });
   const valid = validateGraphSnapshot({
-    schemaVersion: 1,
+    schemaVersion: PRAX_SCHEMA_VERSION,
     universes: [universe],
     nodes: [root, node],
     edges: [edge],
