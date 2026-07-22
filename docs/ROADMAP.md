@@ -160,6 +160,7 @@ Galaxy Focus is a projection and interaction mode. It must not rewrite node iden
 - Changing node shape or color does not alter semantic type, identity, provenance, timestamps, or edges.
 - Scoped local search preserves its anchor and restores the exact previous spatial state on exit.
 - Chat preparation remains optional, explicit, inspectable, and unable to break local graph operation when the provider is unavailable.
+- Adaptive hit testing, hierarchy, manual appearance, scoped search, chat foundation, and automatic appearance remain separate acceptance and rollback boundaries.
 
 ### v0.2 acceptance criteria
 
@@ -415,7 +416,7 @@ A user can:
 
 ## 5. Immediate implementation plan
 
-PUX-006 validation, PUX-007 Searchlight, PUX-008 Galaxy Focus, and the PUX-008 mobile touch refinement are accepted on `pux-008-galaxy-focus` at commit `203243c74e79739dab7d5930331289a7a66de547`. The next implementation sequence is PUX-009 through PUX-014 below. Each package remains independently reviewable, reversible, tested on desktop and mobile, and guarded behind a feature-branch preview until explicit acceptance.
+PUX-006 validation, PUX-007 Searchlight, PUX-008 Galaxy Focus, and the PUX-008 mobile touch refinement are accepted on `pux-008-galaxy-focus` at commit `203243c74e79739dab7d5930331289a7a66de547`. The approved next implementation sequence is PUX-009 adaptive hit testing, PUX-010 child hierarchy, PUX-011 manual appearance, PUX-012 node-centered scoped search, PUX-013 node-centered chat foundation, and PUX-014 automatic appearance suggestions. Each package remains independently reviewable, reversible, tested on desktop and mobile, and guarded behind a milestone-specific feature preview until explicit acceptance. PUX-009 is the first implementation milestone and must be completed before any graph-schema migration begins.
 
 ### Work package PUX-001 — Client graph schema — complete
 
@@ -524,71 +525,124 @@ PUX-006 validation, PUX-007 Searchlight, PUX-008 Galaxy Focus, and the PUX-008 m
 
 **Dependencies:** Accepted PUX-008 mobile touch refinement.
 
-- Derive effective touch hit radius from projected node size, camera distance or zoom, device pixel ratio, viewport, and pointer type.
-- Preserve precise fine-pointer behavior.
-- Preserve deterministic tap-versus-drag rejection.
-- Add unit and mobile-browser verification across zoom levels and small nodes.
+**Architecture boundary:** Renderer interaction only. PUX-009 must not change canonical graph records, IndexedDB structure, Prax bundle structure, Worker bindings, or visible node size.
+
+- Replace the fixed coarse-pointer fallback with exported pure calculations for projected node radius and adaptive effective hit radius.
+- Derive projected size from geometry bounds, world scale, camera distance, camera field of view or zoom, viewport CSS dimensions, renderer pixel ratio, device pixel ratio, and pointer type.
+- Keep all pointer comparisons in CSS pixels and normalize device pixel ratio exactly once.
+- Preserve precise fine-pointer raycast behavior; adaptive fallback applies only to touch or pen input after the normal raycast misses.
+- Rank overlapping fallback candidates deterministically using normalized distance from the rendered boundary, projected depth, and stable node ID as the final tie-breaker.
+- Preserve deterministic tap-versus-drag rejection as a separate threshold from hit radius.
+- Verify DPR 1, 2, and 3, multiple zoom levels, far and small nodes, emphasized nodes, overlapping targets, sphere and grid views, Searchlight, and Galaxy Focus.
+- Require guarded desktop, touch-mobile, and physical-iPhone validation before acceptance.
 
 ### Queued work package PUX-010 — Child node hierarchy
 
 **Dependencies:** PUX-003 root topology, PUX-004 CRUD, PUX-005 import/export, and PUX-006 validation.
 
-- Define an explicit parent/child edge type and direction.
-- Keep the universe-root membership edge for every non-root node.
-- Create the node, root-membership edge, and parent/child edge atomically.
-- Place a new child near its parent in the active layout without storing render coordinates in canonical node content.
-- Add Add Child, child count, compact child list, and parent navigation to the selected-node UI.
-- Do not silently cascade-delete children when a parent is deleted.
-- Verify rollback, persistence, export/import, replacement, root invariants, and desktop/mobile interaction.
+**Architecture decision:** Hierarchy uses a directed `parent_of` edge from parent to child. It forms a single-parent, acyclic forest layered over universe membership.
+
+**Migration boundary:** Introduce graph schema version 2 while keeping IndexedDB database version 1 and Prax bundle envelope version 1. Existing version-1 graphs migrate without manufactured hierarchy and preserve all IDs, timestamps, provenance, content, layouts, and root-membership edges.
+
+- Add `parent_of` as an explicit typed edge with direction `parent --parent_of--> child`.
+- Keep exactly one universe-root `contains` membership edge for every non-root node; hierarchy supplements membership and never replaces it.
+- Require zero or one incoming `parent_of` edge per node, allow any number of children, and reject cycles, duplicate parent/child relationships, cross-universe hierarchy, self-edges, and universe-root hierarchy endpoints.
+- Add a single composite store command that creates the child node, root-membership edge, and parent edge atomically and validates the complete snapshot before persistence.
+- Harden the shared mutation coordinator so scene-projection failure restores and re-persists the previous graph and fully restores the previous scene, matching the replacement rollback guarantee.
+- Place a new child near its parent in transient renderer state without storing render coordinates in canonical node content.
+- Add Add Child, parent link, child count, compact direct-child list, and parent/child navigation to the selected-node UI.
+- Use direct children for the initial hierarchy UX; recursive descendants remain available to later traversal features.
+- Never cascade-delete children. Deleting a parent removes that node and its connected edges, preserves each child's root-membership edge, and promotes direct children to top-level nodes.
+- State the number of direct children that will become top-level in the deletion confirmation.
+- Verify graph-schema migration, cycle rejection, multiple-parent rejection, rollback after each composite step, persistence, export/import, replacement, root invariants, projection failure recovery, desktop/mobile interaction, and physical-iPhone behavior.
 
 ### Queued work package PUX-011 — Manual node appearance
 
-**Dependencies:** Stable node identity and scene resource-update behavior.
+**Dependencies:** Stable node identity, accepted PUX-010 graph schema version 2, and safe scene resource-update behavior.
 
-- Define a validated visual-style override separate from semantic `nodeType`.
-- Keep `auto` as the default appearance mode.
-- Add an initial finite shape allowlist: sphere, cube, diamond or octahedron, and ring or torus.
-- Add palette colors and validated normalized custom colors.
-- Decide through a documented schema decision whether overrides belong in layout/view records or a dedicated visual-style record.
-- Add Appearance and Reset Appearance actions to the selected-node panel.
-- Update existing render objects safely without changing node identity, edges, provenance, or semantic type.
-- Persist and round-trip appearance overrides.
+**Architecture decision:** Store appearance in a dedicated canonical `nodeVisualStyles` collection. Do not place manual appearance on semantic node records or layout-node coordinate records.
+
+**Migration boundary:** Introduce graph schema version 3, IndexedDB database version 2 with a `node_visual_styles` store, and Prax bundle version 2. Version-2 graphs migrate with no style records, which resolves to automatic appearance.
+
+- Define a validated visual-style record keyed to one node and universe, separate from semantic `nodeType`, node provenance, and node timestamps.
+- Treat absence of a style record as `auto`; a manual record may override shape, color, or both.
+- Use canonical shape keys `sphere`, `cube`, `octahedron`, and `torus`; the UI may label `octahedron` as Diamond and `torus` as Ring.
+- Add palette colors and validated normalized `#rrggbb` custom colors.
+- Add a pure appearance resolver with precedence: manual field override, then automatic suggestion when available, then semantic node-type default.
+- Add an Appearance sheet or drawer with Auto/Manual state, shape choices, palette, custom color validation, live preview, Apply, and Reset Appearance.
+- Reset Appearance deletes only the style record and resolves immediately to automatic/default presentation.
+- Preserve the existing mesh object, node position, selection references, edge endpoints, Searchlight state, and Galaxy Focus membership when changing geometry or color.
+- Dispose replaced geometry safely and update material color in place where possible.
+- Verify schema and database migration, persistence, reload, export/import, replacement rollback, resource disposal, semantic identity preservation, desktop/mobile interaction, and physical-iPhone behavior.
 
 ### Queued work package PUX-012 — Node-centered scoped search
 
-**Dependencies:** PUX-007 shared Searchlight navigation and PUX-010 hierarchy.
+**Dependencies:** PUX-007 shared Searchlight navigation and accepted PUX-010 hierarchy.
 
-- Reuse the exact local Searchlight engine.
-- Add explicit scopes: This Node, Children, Neighborhood, and Universe.
-- Keep the selected node as a stable search anchor while results change.
-- Show each result's relationship to the anchor.
-- Restore the exact previous camera, projection, selected node, and emphasis state on exit.
-- Keep all search local and deterministic.
+**Architecture boundary:** Reuse `searchNodesExact()` unchanged. A separate deterministic scope resolver supplies its candidate node list.
+
+- Add explicit scopes with fixed initial semantics: This Node means the anchor only; Children means direct children only; Neighborhood means the anchor plus immediate explicit hierarchy and semantic relationships; Universe means all nodes.
+- Exclude the infrastructure universe-root membership edge from ordinary Neighborhood results while retaining it for topology inspection.
+- Maintain separate `anchorNodeId` and `activeResultNodeId` state so browsing results does not silently replace the selected anchor.
+- Keep the selected anchor visibly pinned while results change and provide an explicit Open Result action when the user intends to change selection.
+- Show each result's relationship to the anchor and distinguish parent, child, semantic neighbor, and universe-wide matches.
+- Extend the shared navigation snapshot to capture camera, projection, selected node, prior emphasis, rotation state, and any active presentation mode needed for exact restoration.
+- Restore the exact previous camera, projection, selected node, emphasis, rotation, and presentation state on exit.
+- Keep all search local, deterministic, offline-capable, and independent of chat-provider availability.
+- Verify scope resolution, root-edge exclusion, anchor stability, Galaxy Focus interaction, Searchlight reuse, reduced motion, desktop/mobile behavior, and physical-iPhone restoration.
 
 ### Queued work package PUX-013 — Node-centered chat foundation
 
-**Dependencies:** PUX-012 anchor/scoping behavior. Production provider access additionally depends on an authenticated and rate-limited Worker boundary.
+**Dependencies:** Accepted PUX-012 anchor/scoping behavior. Live provider access additionally depends on an authenticated, rate-limited, isolated staging Worker boundary.
+
+**Architecture boundary:** Separate the local context builder, browser chat client and drawer, and Worker provider adapter. The local graph must remain fully usable when the provider is absent or disabled.
 
 - Add Search and Chat actions to the selected-node panel.
 - Build a chat drawer that visibly pins the anchor node and included context scope.
-- Add a context preview and explicit send action.
-- Include only selected fields and relationships rather than transmitting the entire universe.
-- Add a provider/model adapter and keep credentials in the Worker.
-- Prepare Cloudflare Workers AI as the initial provider and verify the exact supported fast Llama model when implementation begins.
-- Define cancellation, timeout, context limits, error, offline, and unavailable-provider behavior.
+- Build a deterministic versioned context contract containing only approved node fields, included explicit edges, omission and size summaries, and a reproducible digest.
+- Add a visible context preview and require an explicit send action before any node content leaves the browser.
+- Never transmit the entire universe implicitly.
+- Add a provider registry and provider-neutral request, streaming, cancellation, timeout, limit, and normalized-error interfaces.
+- Keep all credentials, provider bindings, and model calls in the Worker; the browser receives no provider secret.
+- Treat `@cf/meta/llama-3.1-8b-instruct-fast` as the current provisional Cloudflare Workers AI candidate, but reverify exact support, capabilities, pricing, and model identifier immediately before implementation.
+- Deliver the context builder, drawer, adapter contract, and fake-provider tests before enabling live inference.
+- Require a separate staging Worker, Workers AI binding, authentication or Cloudflare Access, rate limits, privacy-oriented logs, and request-size controls before a real provider route is enabled.
+- Do not add an unauthenticated paid inference endpoint to the current public preview alias.
+- Define offline, unavailable-provider, cancellation, timeout, context-limit, partial-response, retry, and error behavior.
 - Preserve local-first graph operation when chat is unavailable.
-- Prepare successful chats to be saved as conversation nodes linked to their anchor without mutating the anchor.
+- Define the future conversation-result contract without creating conversation nodes in this milestone; durable chat-node mutation remains a later independently accepted package.
 
 ### Queued work package PUX-014 — Automatic appearance suggestions
 
-**Dependencies:** PUX-011 manual appearance and a stable content-classification boundary.
+**Dependencies:** Accepted PUX-011 manual appearance and a stable content-classification boundary.
 
-- Suggest shape and color from semantic type or content.
+**Architecture boundary:** Automatic appearance is derived, explainable suggestion state. It is not semantic node truth and never mutates or deletes a manual style record.
+
+- Suggest shape and color from semantic type, content, or metadata.
+- Start with a deterministic local rule engine before adding any model-based classifier.
+- Store or expose each suggestion with its proposed shape and color, source rule or model, explanation, content digest, rule or model version, and confidence when applicable.
+- Resolve appearance field by field using: manual override, then automatic suggestion, then semantic node-type default.
 - Keep every suggestion explainable and manually overridable.
 - Never overwrite a manual appearance choice without explicit confirmation.
-- Keep classification suggestions separate from canonical node meaning.
+- Keep classification suggestions separate from canonical node meaning, provenance, and explicit graph relationships.
 
 ## 6. Build order and dependency gates
+
+### Immediate node-centered dependency graph
+
+```text
+Accepted PUX-008
+    └── PUX-009 adaptive node hit testing
+
+PUX-003 + PUX-004 + PUX-005 + PUX-006
+    └── PUX-010 child node hierarchy
+          ├── PUX-011 manual node appearance
+          │      └── PUX-014 automatic appearance suggestions
+          └── PUX-012 node-centered scoped search
+                 └── PUX-013 node-centered chat foundation
+```
+
+### Long-term release sequence
 
 ```text
 v0.2 Local graph correctness
@@ -612,6 +666,9 @@ v1.0 Personal Knowledge Universe
 
 Do not skip the following gates:
 
+- Complete PUX-009 as an interaction-only milestone before introducing graph-schema changes.
+- Do not begin child hierarchy UI until the composite mutation and projection-failure rollback boundary is tested.
+- Use a new milestone-specific preview origin whenever a graph or IndexedDB schema upgrade could make local browser data incompatible with older code.
 - No AI-defined graph before stable node and edge identity.
 - No cloud mutation before authentication and authorization.
 - No Vectorize dependency before D1 identity and embedding metadata.
