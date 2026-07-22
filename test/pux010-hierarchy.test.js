@@ -106,13 +106,11 @@ test('hierarchy rejects an explicit self-edge as a cycle', () => {
   const store = new GraphStore(createSeedSnapshot());
   const node = firstContentNode(store);
 
-  // A self-edge is the trivial one-node cycle. Schema-level validation rejects
-  // it earlier and more specifically (code "self_edge") than the store's
-  // general multi-node cycle walk (code "hierarchy_cycle"), so either code
-  // satisfies the acyclic-hierarchy contract.
+  // Schema validation rejects the trivial one-node cycle before the store's
+  // multi-node cycle walk, so the public contract is the specific self_edge code.
   assert.throws(
     () => store.addParentEdge(node.id, node.id),
-    (error) => error.issues?.[0]?.code === 'self_edge' || error.issues?.[0]?.code === 'hierarchy_cycle'
+    (error) => error.issues?.[0]?.code === 'self_edge'
   );
 });
 
