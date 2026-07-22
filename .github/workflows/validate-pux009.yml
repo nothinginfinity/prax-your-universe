@@ -58,7 +58,7 @@ jobs:
           if-no-files-found: error
 
   preview:
-    if: github.event_name == 'workflow_dispatch'
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref_name == 'pux-009-adaptive-hit-testing' }}
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -170,7 +170,7 @@ jobs:
           - Production traffic changed: **no**
           SUMMARY
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ always() && steps.preview.outcome != 'skipped' }}
         with:
           name: pux009-preview-evidence-${{ github.sha }}
           path: artifacts/pux009-preview
