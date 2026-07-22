@@ -5,9 +5,13 @@ import {
   createNodeCameraState,
   interpolateCameraState
 } from './camera-navigation.js';
+import {
+  calculateAdaptiveHitRadiusPx,
+  calculateProjectedNodeRadiusPx,
+  selectAdaptiveHitCandidate
+} from './adaptive-hit-testing.js';
 
 const PROJECTION_TYPES = Object.freeze(['sphere', 'grid']);
-const TOUCH_HIT_RADIUS_PX = 28;
 const TOUCH_TAP_MOVEMENT_PX = 14;
 const MOUSE_TAP_MOVEMENT_PX = 6;
 
@@ -487,18 +491,88 @@ export class PraxScene {
     });
   }
 
-  findTouchTarget(clientX, clientY, maxDistancePx = TOUCH_HIT_RADIUS_PX) {
-    let closest = null;
-    let closestDistance = maxDistancePx;
-    for (const [nodeId, point] of this.meshByNodeId) {
-      const position = this.getNodeScreenPosition(nodeId);
-      if (!position) continue;
-      const distance = Math.hypot(clientX - position.x, clientY - position.y);
-      if (distance > closestDistance) continue;
-      closest = point;
-      closestDistance = distance;
+  getNodeScreenMetrics(nodeId, pointerType = 'touch') {
+    const point = this.meshByNodeId.get(nodeId);
+    const position = this.getNodeScreenPosition(nodeId);
+    if (!point || !position || !this.camera) return null;
+
+    const geometry = point.geometry;
+    if (!geometry?.boundingSphere && geometry?.computeBoundingSphere) geometry.computeBoundingSphere();
+    const geometryRadius = geometry?.boundingSphere?.radius
+      ?? geometry?.parameters?.radius
+      ?? geometry?.radius
+      ?? 0;
+
+    let worldScale = point.userData.emphasisScale ?? 1;
+    if (point.getWorldScale && this.THREE.Vector3) {
+      const scale = new this.THREE.Vector3(1, 1, 1);
+      point.getWorldScale(scale);
+      worldScale = Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z));
+    } else if (Number.isFinite(point.scale?.x)) {
+      worldScale = Math.max(Math.abs(point.scale.x), Math.abs(point.scale.y), Math.abs(point.scale.z));
+    } else if (Number.isFinite(point.scale?.value)) {
+      worldScale = Math.abs(point.scale.value);
     }
-    return closest;
+
+    const worldPosition = this.getNodeWorldPosition(nodeId);
+    const cameraPosition = this.camera.position ?? { x: 0, y: 0, z: 0 };
+    const cameraDistance = worldPosition
+      ? Math.hypot(
+        worldPosition.x - cameraPosition.x,
+        worldPosition.y - cameraPosition.y,
+        worldPosition.z - cameraPosition.z
+      )
+      : 0;
+    const rect = this.canvas.getBoundingClientRect();
+    const rendererPixelRatio = this.renderer?.getPixelRatio?.()
+      ?? globalThis.devicePixelRatio
+      ?? 1;
+    const renderBufferHeightPx = this.renderer?.domElement?.height
+      ?? this.canvas.height
+      ?? null;
+    const projectedRadiusPx = calculateProjectedNodeRadiusPx({
+      geometryRadius,
+      worldScale,
+      cameraDistance,
+      cameraType: this.camera.isOrthographicCamera ? 'orthographic' : 'perspective',
+      verticalFovDegrees: this.camera.fov,
+      cameraZoom: this.camera.zoom,
+      orthographicTop: this.camera.top,
+      orthographicBottom: this.camera.bottom,
+      viewportHeightCssPx: rect.height,
+      renderBufferHeightPx,
+      rendererPixelRatio,
+      devicePixelRatio: globalThis.devicePixelRatio
+    });
+    const effectiveRadiusPx = calculateAdaptiveHitRadiusPx({ projectedRadiusPx, pointerType });
+    return Object.freeze({
+      ...position,
+      nodeId,
+      pointerType,
+      projectedRadiusPx,
+      effectiveRadiusPx
+    });
+  }
+
+  findAdaptiveTarget(clientX, clientY, pointerType = 'touch') {
+    const candidates = [];
+    for (const [nodeId, point] of this.meshByNodeId) {
+      const metrics = this.getNodeScreenMetrics(nodeId, pointerType);
+      if (!metrics) continue;
+      candidates.push({
+        nodeId,
+        point,
+        depth: metrics.depth,
+        projectedRadiusPx: metrics.projectedRadiusPx,
+        effectiveRadiusPx: metrics.effectiveRadiusPx,
+        centerDistancePx: Math.hypot(clientX - metrics.x, clientY - metrics.y)
+      });
+    }
+    return selectAdaptiveHitCandidate(candidates)?.point ?? null;
+  }
+
+  findTouchTarget(clientX, clientY) {
+    return this.findAdaptiveTarget(clientX, clientY, 'touch');
   }
 
   movePointer(event) {
@@ -541,7 +615,8 @@ export class PraxScene {
     this.movePointer(event);
     const useTouchFallback = gesture.pointerType === 'touch' || gesture.pointerType === 'pen';
     this.updateIntersection({
-      touchFallback: useTouchFallback,
+      adaptiveFallback: useTouchFallback,
+      pointerType: gesture.pointerType,
       clientX: event.clientX,
       clientY: event.clientY
     });
@@ -557,11 +632,11 @@ export class PraxScene {
     this.onSelect(this.intersected?.userData.nodeId ?? null);
   }
 
-  updateIntersection({ touchFallback = false, clientX = null, clientY = null } = {}) {
+  updateIntersection({ adaptiveFallback = false, pointerType = 'touch', clientX = null, clientY = null } = {}) {
     this.raycaster.setFromCamera(this.pointer, this.camera);
     let hit = this.raycaster.intersectObjects(this.pointsGroup.children)[0]?.object ?? null;
-    if (!hit && touchFallback && Number.isFinite(clientX) && Number.isFinite(clientY)) {
-      hit = this.findTouchTarget(clientX, clientY);
+    if (!hit && adaptiveFallback && Number.isFinite(clientX) && Number.isFinite(clientY)) {
+      hit = this.findAdaptiveTarget(clientX, clientY, pointerType);
     }
     if (hit === this.intersected) return;
     if (this.intersected) this.intersected.scale.setScalar(this.intersected.userData.emphasisScale ?? 1);
