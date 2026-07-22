@@ -224,6 +224,55 @@ test('projection failure restores and re-persists the previous graph and invokes
   repository.close();
 });
 
+test('projection rollback aggregates a scene restore failure after persistence is restored', async () => {
+  const indexedDB = new FakeIndexedDbFactory();
+  const repository = new PraxIndexedDbRepository({ indexedDB, databaseName: 'pux010-aggregate-rollback' });
+  const seed = await repository.loadOrCreate(createSeedSnapshot());
+  const store = new GraphStore(seed);
+  const parent = firstContentNode(store);
+  const before = store.snapshot();
+  const projectionError = new Error('scene projection failed before aggregate rollback');
+  const restoreError = new Error('scene restore failed during aggregate rollback');
+  let restoreSnapshot = null;
+  let restoreContext = null;
+
+  await assert.rejects(
+    () => commitGraphMutation({
+      store,
+      repository,
+      mutate: () => store.addChildWithHierarchy(parent.id, {
+        originId: 'pux010-aggregate-rollback-child',
+        nodeType: 'note',
+        title: 'Aggregate rollback child',
+        body: ''
+      }),
+      project: () => {
+        throw projectionError;
+      },
+      restore: (snapshot, context) => {
+        restoreSnapshot = snapshot;
+        restoreContext = context;
+        throw restoreError;
+      }
+    }),
+    (error) => {
+      assert.ok(error instanceof AggregateError);
+      assert.equal(error.message, 'Graph mutation projection failed and rollback was incomplete.');
+      assert.equal(error.errors.length, 2);
+      assert.strictEqual(error.errors[0], projectionError);
+      assert.strictEqual(error.errors[1], restoreError);
+      return true;
+    }
+  );
+
+  assert.deepEqual(store.snapshot(), before);
+  assert.deepEqual(await repository.loadSnapshot(), before);
+  assert.deepEqual(restoreSnapshot, before);
+  assert.equal(restoreContext.phase, 'rollback');
+  assert.strictEqual(restoreContext.projectionError, projectionError);
+  repository.close();
+});
+
 test('schema v2 hierarchy survives IndexedDB v1 and Prax bundle v1 export/import', async () => {
   assert.equal(PRAX_DATABASE_VERSION, 1);
   assert.equal(PRAX_BUNDLE_VERSION, 1);
