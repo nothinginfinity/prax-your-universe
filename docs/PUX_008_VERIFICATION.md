@@ -1,6 +1,6 @@
 # PUX-008 Verification - Galaxy Focus
 
-**Status:** Implementation and non-production preview verified; final CairnStone acceptance pending  
+**Status:** Accepted — implementation, guarded preview, physical iPhone refinement, and canonical CairnStone roadmap acceptance complete  
 **Working branch:** `pux-008-galaxy-focus`  
 **Starting commit:** `0a51e063fa6adbae358ed70e49035948f0dc7650`  
 **Rollback boundary:** `d234123e55b634eb0e9020638279acc76e7cc1cb`  
@@ -9,7 +9,8 @@
 **Stable preview:** `https://pux-008-prax-your-universe.jaredtechfit.workers.dev`  
 **Workflow:** `Validate PUX-006`  
 **Implementation push run:** `29857617595`  
-**Preview verification run:** `29857846017`
+**Preview verification run:** `29857846017`  
+**Canonical accepted roadmap stone:** `aa3c841fc85c3d963303d6f7c95a9966e2af1cf1e00fedc5ea4bea1e168cff07`
 
 ## Delivered behavior
 

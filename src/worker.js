@@ -11,8 +11,8 @@ export default {
       return json({
         ok: true,
         app: 'prax-your-universe',
-        version: '0.2.0-pux.7',
-        milestone: 'PUX-007',
+        version: '0.2.0-pux.8',
+        milestone: 'PUX-008',
         graph_schema_version: 1,
         indexeddb_database_version: 1,
         prax_bundle_version: 1,
