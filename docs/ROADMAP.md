@@ -416,7 +416,7 @@ A user can:
 
 ## 5. Immediate implementation plan
 
-PUX-006 validation, PUX-007 Searchlight, PUX-008 Galaxy Focus, and the PUX-008 mobile touch refinement are accepted on `pux-008-galaxy-focus` at commit `203243c74e79739dab7d5930331289a7a66de547`. The approved next implementation sequence is PUX-009 adaptive hit testing, PUX-010 child hierarchy, PUX-011 manual appearance, PUX-012 node-centered scoped search, PUX-013 node-centered chat foundation, and PUX-014 automatic appearance suggestions. Each package remains independently reviewable, reversible, tested on desktop and mobile, and guarded behind a milestone-specific feature preview until explicit acceptance. PUX-009 is the first implementation milestone and must be completed before any graph-schema migration begins.
+PUX-006 validation, PUX-007 Searchlight, PUX-008 Galaxy Focus, and the PUX-008 mobile touch refinement are accepted on `pux-008-galaxy-focus` at commit `203243c74e79739dab7d5930331289a7a66de547`. The approved next implementation sequence is PUX-009 adaptive hit testing, PUX-010 child hierarchy, PUX-011 manual appearance, PUX-012 node-centered scoped search, PUX-013 node-centered chat foundation, and PUX-014 automatic appearance suggestions. Each package remains independently reviewable, reversible, tested on desktop and mobile, and guarded behind a milestone-specific feature preview until explicit acceptance. PUX-009 is accepted at implementation commit `71601db1049f9816019648e676416f2dc3bca1ea`. PUX-010 child hierarchy is now the next implementation milestone and the first graph-schema migration.
 
 ### Work package PUX-001 — Client graph schema — complete
 
@@ -521,7 +521,9 @@ PUX-006 validation, PUX-007 Searchlight, PUX-008 Galaxy Focus, and the PUX-008 m
 - Test repeated entry and exit without coordinate drift or leaked scene objects.
 - Verify performance on desktop and mobile with realistic local graph sizes.
 
-### Queued work package PUX-009 — Adaptive node hit testing
+### Work package PUX-009 — Adaptive node hit testing — complete and accepted
+
+**Accepted boundary:** Adaptive node hit testing is accepted at implementation commit `71601db1049f9816019648e676416f2dc3bca1ea` after successful automated branch validation, guarded non-production preview validation, and user-confirmed physical-iPhone manual testing. Raycasting remains authoritative; adaptive fallback remains touch/pen-only after a miss; drag rejection, visible node size, and canonical graph invariants remain preserved.
 
 **Dependencies:** Accepted PUX-008 mobile touch refinement.
 
@@ -631,8 +633,7 @@ PUX-006 validation, PUX-007 Searchlight, PUX-008 Galaxy Focus, and the PUX-008 m
 ### Immediate node-centered dependency graph
 
 ```text
-Accepted PUX-008
-    └── PUX-009 adaptive node hit testing
+Accepted PUX-009 adaptive node hit testing
 
 PUX-003 + PUX-004 + PUX-005 + PUX-006
     └── PUX-010 child node hierarchy
