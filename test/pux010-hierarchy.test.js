@@ -1,7 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PARENT_EDGE_TYPE, PRAX_SCHEMA_VERSION } from '../public/js/graph-schema.js';
-import { GraphStore, createSeedSnapshot, upgradeGraphSnapshot } from '../public/js/graph-store.js';
+import {
+  PARENT_EDGE_TYPE,
+  PRAX_SCHEMA_VERSION,
+  createNodeRecord,
+  createUniverseRecord
+} from '../public/js/graph-schema.js';
+import {
+  GraphStore,
+  createSeedSnapshot,
+  createUniverseRootRecord,
+  upgradeGraphSnapshot
+} from '../public/js/graph-store.js';
 import { commitGraphMutation } from '../public/js/graph-mutations.js';
 import { PRAX_DATABASE_VERSION, PraxIndexedDbRepository } from '../public/js/indexeddb-repository.js';
 import { PRAX_BUNDLE_VERSION, createPraxExport, parsePraxBundleText } from '../public/js/prax-bundle.js';
@@ -38,6 +48,13 @@ test('schema version 1 migrates to version 2 without manufacturing hierarchy or 
   for (const collection of ['universes', 'nodes', 'edges', 'layouts', 'layoutNodes', 'settings']) {
     assert.equal(upgraded.snapshot[collection].every(({ schemaVersion }) => schemaVersion === PRAX_SCHEMA_VERSION), true);
   }
+});
+
+test('future graph schema versions are rejected instead of being silently downgraded', () => {
+  const future = clone(createSeedSnapshot());
+  future.schemaVersion = PRAX_SCHEMA_VERSION + 1;
+
+  assert.throws(() => upgradeGraphSnapshot(future), /unsupported/i);
 });
 
 test('addChildWithHierarchy atomically creates child, root membership, and parent edge', () => {
@@ -80,6 +97,56 @@ test('hierarchy rejects multiple parents, duplicate relationships, cycles, and r
   assert.throws(() => store.addParentEdge(alternateParent.id, first.id), (error) => error.issues?.[0]?.code === 'multiple_parents');
   assert.throws(() => store.addParentEdge(second.id, parent.id), (error) => error.issues?.[0]?.code === 'hierarchy_cycle');
   assert.throws(() => store.addParentEdge(store.getUniverseRoot().id, alternateParent.id), (error) => error.issues?.[0]?.code === 'invalid_hierarchy_endpoint');
+});
+
+test('hierarchy rejects an explicit self-edge as a cycle', () => {
+  const store = new GraphStore(createSeedSnapshot());
+  const node = firstContentNode(store);
+
+  assert.throws(
+    () => store.addParentEdge(node.id, node.id),
+    (error) => error.issues?.[0]?.code === 'hierarchy_cycle'
+  );
+});
+
+test('hierarchy rejects parent and child nodes from different universes', () => {
+  const store = new GraphStore(createSeedSnapshot());
+  const parent = firstContentNode(store);
+  const foreignUniverse = createUniverseRecord({
+    id: 'universe_pux010_foreign',
+    originId: 'pux010-foreign-universe',
+    name: 'Foreign Universe'
+  });
+  const foreignRoot = createUniverseRootRecord(foreignUniverse);
+  const foreignChild = createNodeRecord({
+    universeId: foreignUniverse.id,
+    originId: 'pux010-foreign-child',
+    nodeType: 'note',
+    title: 'Foreign child',
+    body: ''
+  });
+  store.universes.set(foreignUniverse.id, foreignUniverse);
+  store.nodes.set(foreignRoot.id, foreignRoot);
+  store.nodes.set(foreignChild.id, foreignChild);
+
+  assert.throws(
+    () => store.addParentEdge(parent.id, foreignChild.id),
+    (error) => error.issues?.[0]?.code === 'missing_reference'
+  );
+});
+
+test('hierarchy permits broad sibling fan-out without a child-count limit', () => {
+  const store = new GraphStore(createSeedSnapshot());
+  const parent = firstContentNode(store);
+  const children = Array.from({ length: 64 }, (_, index) => store.addChildWithHierarchy(parent.id, {
+    originId: `pux010-sibling-${index}`,
+    nodeType: 'note',
+    title: `Sibling ${index}`,
+    body: ''
+  }).node);
+
+  assert.equal(store.getChildCount(parent.id), children.length);
+  assert.deepEqual(store.listChildren(parent.id).map(({ id }) => id), children.map(({ id }) => id));
 });
 
 test('composite child creation restores the complete prior snapshot when a later step fails', () => {
