@@ -61,8 +61,20 @@
         </div>
         <p id="searchlight-status" class="searchlight-status" aria-live="polite">Exact local search - Press / to focus</p>
       </section>
+      <section id="info-hierarchy" class="info-hierarchy" aria-label="Selected node hierarchy" hidden>
+        <div id="info-parent-row" class="hierarchy-row" hidden>
+          <span class="hierarchy-label">Parent</span>
+          <button id="info-parent-link" class="hierarchy-link hierarchy-parent-link" type="button"></button>
+        </div>
+        <div class="hierarchy-row">
+          <span class="hierarchy-label">Direct children</span>
+          <span id="info-child-count" class="hierarchy-count" aria-live="polite">0</span>
+        </div>
+        <ul id="info-child-list" class="hierarchy-child-list" hidden></ul>
+      </section>
       <a id="info-link" href="#" target="_blank" rel="noopener noreferrer" class="btn">Visit Link</a>
       <div id="info-actions" class="info-actions">
+        <button id="add-child-btn" class="btn add-child-action">Add Child</button>
         <button id="edit-node-btn" class="btn">Edit</button>
         <button id="delete-node-btn" class="btn danger-btn">Delete</button>
       </div>
