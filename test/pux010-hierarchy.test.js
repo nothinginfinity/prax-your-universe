@@ -13,6 +13,12 @@ import {
   upgradeGraphSnapshot
 } from '../public/js/graph-store.js';
 import { commitGraphMutation } from '../public/js/graph-mutations.js';
+import {
+  commitChildHierarchyMutation,
+  createChildNodeInput,
+  createHierarchyViewModel,
+  selectHierarchyNode
+} from '../public/js/hierarchy-ui.js';
 import { PRAX_DATABASE_VERSION, PraxIndexedDbRepository } from '../public/js/indexeddb-repository.js';
 import { PRAX_BUNDLE_VERSION, createPraxExport, parsePraxBundleText } from '../public/js/prax-bundle.js';
 import { FakeIndexedDbFactory } from '../test-support/fake-indexeddb.js';
@@ -78,6 +84,234 @@ test('addChildWithHierarchy atomically creates child, root membership, and paren
   assert.equal(store.getChildCount(parent.id), 1);
   assert.deepEqual(store.listDirectChildren(parent.id).map(({ id }) => id), [result.node.id]);
   assert.equal(store.getDirectChildCount(parent.id), 1);
+});
+
+test('Phase 7 hierarchy UI model exposes the immediate parent and stable-ID ordered direct children only', () => {
+  const store = new GraphStore(createSeedSnapshot());
+  const parent = firstContentNode(store);
+  const children = [
+    store.addChildWithHierarchy(parent.id, {
+      originId: 'pux010-ui-child-z',
+      nodeType: 'note',
+      title: 'Z child',
+      body: ''
+    }).node,
+    store.addChildWithHierarchy(parent.id, {
+      originId: 'pux010-ui-child-a',
+      nodeType: 'note',
+      title: 'A child',
+      body: ''
+    }).node
+  ];
+  const grandchild = store.addChildWithHierarchy(children[0].id, {
+    originId: 'pux010-ui-grandchild',
+    nodeType: 'note',
+    title: 'Grandchild',
+    body: ''
+  }).node;
+
+  const parentView = createHierarchyViewModel(store, parent.id);
+  const expectedChildIds = children.map(({ id }) => id).sort();
+  assert.equal(parentView.parent, null);
+  assert.equal(parentView.childCount, 2);
+  assert.deepEqual(parentView.children.map(({ id }) => id), expectedChildIds);
+  assert.equal(parentView.children.some(({ id }) => id === grandchild.id), false);
+
+  const childView = createHierarchyViewModel(store, children[0].id);
+  assert.equal(childView.parent.id, parent.id);
+  assert.equal(childView.childCount, 1);
+  assert.deepEqual(childView.children.map(({ id }) => id), [grandchild.id]);
+
+  const rootView = createHierarchyViewModel(store, store.getUniverseRoot().id);
+  assert.equal(rootView.parent, null);
+  assert.equal(rootView.childCount, 0);
+  assert.deepEqual(rootView.children, []);
+});
+
+test('Phase 7 Add Child uses the composite command, projects both edges, and preserves camera state', async () => {
+  const store = new GraphStore(createSeedSnapshot());
+  const parent = firstContentNode(store);
+  const cameraState = Object.freeze({
+    position: Object.freeze({ x: 4, y: 5, z: 19 }),
+    target: Object.freeze({ x: 1, y: 2, z: 3 }),
+    graphRotation: Object.freeze({ x: 0.1, y: 0.2, z: 0.3 })
+  });
+  const projectedNodes = [];
+  const projectedEdges = [];
+  const restoredCameras = [];
+  let compositeCalls = 0;
+  const originalAddChildWithHierarchy = store.addChildWithHierarchy.bind(store);
+  store.addChildWithHierarchy = (parentId, input) => {
+    compositeCalls += 1;
+    return originalAddChildWithHierarchy(parentId, input);
+  };
+  const scene = {
+    captureCameraState: () => cameraState,
+    addNodes: (nodes) => projectedNodes.push(...nodes),
+    addEdges: (edges) => projectedEdges.push(...edges),
+    restoreCameraState: (state, options) => restoredCameras.push({ state, options }),
+    replaceGraph: () => {},
+    setView: () => {}
+  };
+
+  const result = await commitChildHierarchyMutation({
+    store,
+    scene,
+    parentId: parent.id,
+    input: createChildNodeInput({
+      nodeType: 'note',
+      title: 'UI child',
+      body: 'Created from selected-node UI'
+    })
+  });
+
+  assert.equal(compositeCalls, 1);
+  assert.deepEqual(projectedNodes.map(({ id }) => id), [result.node.id]);
+  assert.deepEqual(projectedEdges.map(({ id }) => id), [result.rootEdge.id, result.parentEdge.id]);
+  assert.deepEqual(projectedEdges.map(({ edgeType }) => edgeType), ['contains', PARENT_EDGE_TYPE]);
+  assert.equal(restoredCameras.length, 1);
+  assert.strictEqual(restoredCameras[0].state, cameraState);
+  assert.deepEqual(restoredCameras[0].options, { immediate: true });
+  assert.equal(store.getParent(result.node.id).id, parent.id);
+  assert.ok(store.getDefaultRootEdge(result.node.id));
+
+  const parentView = createHierarchyViewModel(store, parent.id);
+  assert.equal(parentView.childCount, 1);
+  assert.deepEqual(parentView.children.map(({ id }) => id), [result.node.id]);
+  for (const record of [...store.snapshot().nodes, ...store.snapshot().edges]) {
+    assert.equal('position' in record, false);
+    assert.equal('x' in record, false);
+    assert.equal('y' in record, false);
+    assert.equal('z' in record, false);
+  }
+});
+
+test('Phase 7 hierarchy navigation selects and navigates to the exact parent or child while rejecting root navigation', () => {
+  const store = new GraphStore(createSeedSnapshot());
+  const parent = firstContentNode(store);
+  const child = store.addChildWithHierarchy(parent.id, {
+    originId: 'pux010-ui-navigation-child',
+    nodeType: 'link',
+    title: 'Navigation child',
+    url: 'https://example.com/navigation'
+  }).node;
+  const selected = [];
+  const navigated = [];
+  const scene = {
+    navigateToNode: (nodeId, options) => navigated.push({ nodeId, options })
+  };
+
+  const selectedChild = selectHierarchyNode({
+    store,
+    scene,
+    nodeId: child.id,
+    onSelect: (node) => selected.push(node.id),
+    immediate: true
+  });
+  const selectedParent = selectHierarchyNode({
+    store,
+    scene,
+    nodeId: parent.id,
+    onSelect: (node) => selected.push(node.id),
+    immediate: false
+  });
+  const selectedRoot = selectHierarchyNode({
+    store,
+    scene,
+    nodeId: store.getUniverseRoot().id,
+    onSelect: (node) => selected.push(node.id)
+  });
+
+  assert.equal(selectedChild.id, child.id);
+  assert.equal(selectedParent.id, parent.id);
+  assert.equal(selectedRoot, null);
+  assert.deepEqual(selected, [child.id, parent.id]);
+  assert.deepEqual(navigated, [
+    { nodeId: child.id, options: { immediate: true } },
+    { nodeId: parent.id, options: { immediate: false } }
+  ]);
+});
+
+test('Phase 7 child creation restores canonical and scene state after projection failure', async () => {
+  const store = new GraphStore(createSeedSnapshot());
+  const parent = firstContentNode(store);
+  const before = store.snapshot();
+  const cameraState = Object.freeze({
+    position: Object.freeze({ x: 2, y: 3, z: 17 }),
+    target: Object.freeze({ x: 0, y: 0, z: 0 }),
+    graphRotation: Object.freeze({ x: 0, y: 0.4, z: 0 })
+  });
+  let restoredGraph = null;
+  let restoredView = null;
+  let restoredCamera = null;
+  const scene = {
+    captureCameraState: () => cameraState,
+    addNodes: () => {},
+    addEdges: () => {
+      throw new Error('Phase 7 injected projection failure');
+    },
+    replaceGraph: (nodes, edges) => {
+      restoredGraph = { nodes, edges };
+    },
+    setView: (view, options) => {
+      restoredView = { view, options };
+    },
+    restoreCameraState: (state, options) => {
+      restoredCamera = { state, options };
+    }
+  };
+
+  await assert.rejects(() => commitChildHierarchyMutation({
+    store,
+    scene,
+    parentId: parent.id,
+    input: createChildNodeInput({ nodeType: 'note', title: 'Rollback UI child', body: '' })
+  }), /Phase 7 injected projection failure/);
+
+  assert.deepEqual(store.snapshot(), before);
+  assert.deepEqual(restoredGraph, { nodes: before.nodes, edges: before.edges });
+  assert.deepEqual(restoredView, { view: store.getPreferredLayout(), options: { resetCamera: false } });
+  assert.strictEqual(restoredCamera.state, cameraState);
+  assert.deepEqual(restoredCamera.options, { immediate: true });
+});
+
+test('Phase 7 child creation stops before scene projection and restores the graph after persistence failure', async () => {
+  const store = new GraphStore(createSeedSnapshot());
+  const parent = firstContentNode(store);
+  const before = store.snapshot();
+  let projected = false;
+  const repository = {
+    saveSnapshot: async () => {
+      throw new Error('Phase 7 injected persistence failure');
+    }
+  };
+  const scene = {
+    captureCameraState: () => ({
+      position: { x: 0, y: 0, z: 20 },
+      target: { x: 0, y: 0, z: 0 },
+      graphRotation: { x: 0, y: 0, z: 0 }
+    }),
+    addNodes: () => {
+      projected = true;
+    },
+    addEdges: () => {
+      projected = true;
+    },
+    restoreCameraState: () => {},
+    replaceGraph: () => {},
+    setView: () => {}
+  };
+
+  await assert.rejects(() => commitChildHierarchyMutation({
+    store,
+    repository,
+    scene,
+    parentId: parent.id,
+    input: createChildNodeInput({ nodeType: 'link', title: 'Unsaved UI child', url: 'https://example.com/unsaved' })
+  }), /Phase 7 injected persistence failure/);
+
+  assert.deepEqual(store.snapshot(), before);
+  assert.equal(projected, false);
 });
 
 test('hierarchy rejects multiple parents, duplicate relationships, cycles, and root endpoints', () => {
@@ -296,5 +530,8 @@ test('schema v2 hierarchy survives IndexedDB v1 and Prax bundle v1 export/import
   const importedStore = new GraphStore(imported.snapshot);
   assert.equal(importedStore.getParent(child.id).id, parent.id);
   assert.ok(importedStore.getDefaultRootEdge(child.id));
+  const importedHierarchyView = createHierarchyViewModel(importedStore, parent.id);
+  assert.equal(importedHierarchyView.childCount, 1);
+  assert.deepEqual(importedHierarchyView.children.map(({ id }) => id), [child.id]);
   repository.close();
 });

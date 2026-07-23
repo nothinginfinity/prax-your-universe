@@ -134,7 +134,7 @@ const runViewport = async (browser, viewport) => {
   await page.goto(`${baseUrl}/?puxTest=008`, { waitUntil: 'load', timeout: 30000 });
   await page.waitForFunction(() => Boolean(globalThis.__PRAX_TEST__?.getState), null, { timeout: 30000 });
   const initial = await getState(page);
-  assert.equal(['0.2.0-pux.8.1', '0.2.0-pux.9'].includes(initial.applicationVersion), true);
+  assert.equal(['0.2.0-pux.8.1', '0.2.0-pux.9', '0.2.0-pux.10'].includes(initial.applicationVersion), true);
   assert.equal(initial.galaxyFocus.state, 'idle');
   assert.equal(await page.getAttribute('#focus-btn', 'aria-label'), 'Focus selected node in Galaxy Focus');
   assert.equal(await page.getAttribute('#main-canvas', 'aria-label'), 'Prax spatial knowledge graph. Escape exits Galaxy Focus.');
