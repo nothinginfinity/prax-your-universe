@@ -132,7 +132,7 @@ const runViewport = async (browser, viewport) => {
   await page.waitForFunction(() => Boolean(globalThis.__PRAX_TEST__?.getNodeScreenMetrics), null, { timeout: 30000 });
   assert.equal(await page.title(), 'Prax — Your Universe');
   const initial = await getState(page);
-  assert.equal(initial.applicationVersion, '0.2.0-pux.9');
+  assert.equal(['0.2.0-pux.9', '0.2.0-pux.10'].includes(initial.applicationVersion), true);
   assert.equal(await page.evaluate(() => devicePixelRatio), viewport.deviceScaleFactor);
 
   const sphere = await verifyAdaptiveInteraction(page, viewport, 'sphere');
