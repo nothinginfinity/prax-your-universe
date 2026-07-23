@@ -13,9 +13,15 @@ import { createNavigationSnapshot, getExplicitNeighborhoodNodeIds } from './grap
 import { GalaxyPraxScene as PraxScene } from './galaxy-scene.js';
 import { GalaxyFocusController } from './galaxy-focus-controller.js';
 import { getNodeVisualMetadata } from './scene.js';
+import {
+  commitChildHierarchyMutation,
+  createChildNodeInput,
+  createHierarchyViewModel,
+  selectHierarchyNode
+} from './hierarchy-ui.js';
 import { SearchlightSession } from './searchlight.js';
 
-const APP_VERSION = '0.2.0-pux.9';
+const APP_VERSION = '0.2.0-pux.10';
 
 const infoPanel = document.querySelector('#info-panel');
 const infoTitle = document.querySelector('#info-title');
@@ -23,7 +29,13 @@ const infoType = document.querySelector('#info-type');
 const infoDetails = document.querySelector('#info-details');
 const infoBody = document.querySelector('#info-body');
 const infoLink = document.querySelector('#info-link');
+const infoHierarchy = document.querySelector('#info-hierarchy');
+const infoParentRow = document.querySelector('#info-parent-row');
+const infoParentButton = document.querySelector('#info-parent-link');
+const infoChildCount = document.querySelector('#info-child-count');
+const infoChildList = document.querySelector('#info-child-list');
 const infoActions = document.querySelector('#info-actions');
+const addChildButton = document.querySelector('#add-child-btn');
 const editNodeButton = document.querySelector('#edit-node-btn');
 const deleteNodeButton = document.querySelector('#delete-node-btn');
 const modal = document.querySelector('#modal-backdrop');
@@ -70,6 +82,7 @@ let persistenceLabel = 'Memory only';
 let workerLabel = 'Worker checking';
 let selectedNodeId = null;
 let editingNodeId = null;
+let childParentId = null;
 let modalMode = 'create';
 let pendingImport = null;
 let transferMessage = 'Import/export ready';
@@ -112,6 +125,44 @@ const initializeStore = async () => {
 
 const store = await initializeStore();
 
+const renderHierarchyPanel = (node) => {
+  const editable = Boolean(node) && node.nodeType !== UNIVERSE_ROOT_NODE_TYPE;
+  infoHierarchy.hidden = !editable;
+  if (!editable) {
+    infoParentRow.hidden = true;
+    infoParentButton.textContent = '';
+    delete infoParentButton.dataset.nodeId;
+    infoChildCount.textContent = '0';
+    infoChildList.replaceChildren();
+    infoChildList.hidden = true;
+    return;
+  }
+
+  const hierarchy = createHierarchyViewModel(store, node.id);
+  infoParentRow.hidden = !hierarchy.parent;
+  if (hierarchy.parent) {
+    infoParentButton.textContent = hierarchy.parent.title;
+    infoParentButton.dataset.nodeId = hierarchy.parent.id;
+  } else {
+    infoParentButton.textContent = '';
+    delete infoParentButton.dataset.nodeId;
+  }
+  infoChildCount.textContent = String(hierarchy.childCount);
+  const childItems = hierarchy.children.map((child) => {
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'hierarchy-link hierarchy-child-link';
+    button.dataset.nodeId = child.id;
+    button.textContent = child.title;
+    button.setAttribute('aria-label', `Select child ${child.title}`);
+    item.append(button);
+    return item;
+  });
+  infoChildList.replaceChildren(...childItems);
+  infoChildList.hidden = hierarchy.childCount === 0;
+};
+
 const renderInfoPanel = (node) => {
   const visible = Boolean(node) || searchlightOpen;
   const rootSearchlightOpen = Boolean(node) && searchlightOpen && node.nodeType === UNIVERSE_ROOT_NODE_TYPE;
@@ -126,6 +177,7 @@ const renderInfoPanel = (node) => {
     infoBody.textContent = '';
     infoBody.hidden = true;
     infoLink.hidden = true;
+    renderHierarchyPanel(null);
     infoActions.hidden = true;
     return;
   }
@@ -140,6 +192,7 @@ const renderInfoPanel = (node) => {
   const visitable = node.nodeType === 'link' && Boolean(node.url);
   infoLink.hidden = !visitable;
   if (visitable) infoLink.href = node.url;
+  renderHierarchyPanel(node);
   infoActions.hidden = !editable;
 };
 
@@ -315,6 +368,19 @@ function handleSceneSelection(nodeId) {
   }
 }
 
+function navigateHierarchySelection(nodeId) {
+  if (!nodeId) return null;
+  if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
+  if (isSearchlightActive() || searchlightOpen) dismissSearchlight({ restore: false });
+  return selectHierarchyNode({
+    store,
+    scene,
+    nodeId,
+    onSelect: showNode,
+    immediate: prefersReducedMotion()
+  });
+}
+
 const projectSnapshot = (snapshot) => {
   if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
   scene.replaceGraph(snapshot.nodes, snapshot.edges);
@@ -400,6 +466,7 @@ const getPuxVerificationState = () => {
 const closeModal = () => {
   modal.classList.remove('visible');
   editingNodeId = null;
+  childParentId = null;
   modalMode = 'create';
 };
 
@@ -424,7 +491,7 @@ const replaceUniverse = async (snapshot) => {
 };
 
 const testMilestone = new URLSearchParams(location.search).get('puxTest');
-if (['003', '004', '005', '006', '007', '008', '009'].includes(testMilestone)) {
+if (['003', '004', '005', '006', '007', '008', '009', '010'].includes(testMilestone)) {
   Object.defineProperty(globalThis, '__PRAX_TEST__', {
     configurable: false,
     enumerable: false,
@@ -536,13 +603,15 @@ const syncNodeTypeFields = () => {
   bodyField.hidden = nodeType !== 'note';
 };
 
-const openCreateModal = () => {
+const openCreateModal = ({ parent = null } = {}) => {
   if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
   if (isSearchlightActive() || searchlightOpen) dismissSearchlight({ restore: true });
-  modalMode = 'create';
+  const childMode = Boolean(parent) && parent.nodeType !== UNIVERSE_ROOT_NODE_TYPE;
+  modalMode = childMode ? 'create-child' : 'create';
   editingNodeId = null;
-  modalTitle.textContent = 'Add a new node';
-  submitNodeButton.textContent = 'Add Node';
+  childParentId = childMode ? parent.id : null;
+  modalTitle.textContent = childMode ? `Add child to ${parent.title}` : 'Add a new node';
+  submitNodeButton.textContent = childMode ? 'Add Child' : 'Add Node';
   nodeTypeInput.disabled = false;
   nodeTypeInput.value = 'link';
   titleInput.value = '';
@@ -558,6 +627,7 @@ const openEditModal = (node) => {
   if (scene.isGalaxyFocusActive()) galaxyFocusController.exit();
   modalMode = 'edit';
   editingNodeId = node.id;
+  childParentId = null;
   modalTitle.textContent = `Edit ${getNodeVisualMetadata(node.nodeType).label}`;
   submitNodeButton.textContent = 'Save Changes';
   nodeTypeInput.value = node.nodeType;
@@ -570,7 +640,17 @@ const openEditModal = (node) => {
   titleInput.focus();
 };
 
-document.querySelector('#add-btn').addEventListener('click', openCreateModal);
+document.querySelector('#add-btn').addEventListener('click', () => openCreateModal());
+addChildButton.addEventListener('click', () => {
+  const parent = store.getNode(selectedNodeId);
+  if (!parent || parent.nodeType === UNIVERSE_ROOT_NODE_TYPE) return;
+  openCreateModal({ parent });
+});
+infoParentButton.addEventListener('click', () => navigateHierarchySelection(infoParentButton.dataset.nodeId));
+infoChildList.addEventListener('click', (event) => {
+  const button = event.target instanceof Element ? event.target.closest('button[data-node-id]') : null;
+  if (button && infoChildList.contains(button)) navigateHierarchySelection(button.dataset.nodeId);
+});
 document.querySelectorAll('.modal-cancel-btn').forEach((button) => button.addEventListener('click', closeModal));
 nodeTypeInput.addEventListener('change', syncNodeTypeFields);
 
@@ -590,6 +670,24 @@ submitNodeButton.addEventListener('click', async () => {
         project: (record) => scene.updateNode(record)
       });
       showNode(updated);
+    } else if (modalMode === 'create-child') {
+      const parent = store.getNode(childParentId);
+      if (!parent || parent.nodeType === UNIVERSE_ROOT_NODE_TYPE) {
+        throw new Error('The selected parent is no longer available.');
+      }
+      const result = await commitChildHierarchyMutation({
+        store,
+        repository,
+        scene,
+        parentId: parent.id,
+        input: createChildNodeInput({
+          nodeType: nodeTypeInput.value,
+          title: titleInput.value,
+          url: urlInput.value,
+          body: bodyInput.value
+        })
+      });
+      showNode(result.node);
     } else {
       const result = await commitGraphMutation({
         store,
